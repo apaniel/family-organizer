@@ -259,6 +259,58 @@ END:VCALENDAR</c:calendar-data>
         expect(multigetRequest[1]?.body).toContain('<d:href>/12345/calendars/home/event.ics</d:href>');
     });
 
+    it('marks calendars as writable based on the current-user-privilege-set', async () => {
+        const fetchMock = vi.fn().mockResolvedValueOnce(new Response(`<?xml version="1.0" encoding="utf-8"?>
+            <d:multistatus xmlns:d="DAV:" xmlns:cd="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:ical="http://apple.com/ns/ical/">
+              <d:response>
+                <d:href>/12345/calendars/personal/</d:href>
+                <d:propstat>
+                  <d:prop>
+                    <d:displayname>Personal</d:displayname>
+                    <d:resourcetype><d:collection /><cd:calendar /></d:resourcetype>
+                    <cs:getctag>tag-personal</cs:getctag>
+                    <d:sync-token>sync-personal</d:sync-token>
+                    <d:current-user-privilege-set>
+                      <d:privilege><d:read /></d:privilege>
+                      <d:privilege><d:write /></d:privilege>
+                      <d:privilege><d:write-content /></d:privilege>
+                    </d:current-user-privilege-set>
+                  </d:prop>
+                  <d:status>HTTP/1.1 200 OK</d:status>
+                </d:propstat>
+              </d:response>
+              <d:response>
+                <d:href>/12345/calendars/holidays/</d:href>
+                <d:propstat>
+                  <d:prop>
+                    <d:displayname>Holidays</d:displayname>
+                    <d:resourcetype><d:collection /><cd:calendar /></d:resourcetype>
+                    <cs:getctag>tag-holidays</cs:getctag>
+                    <d:sync-token>sync-holidays</d:sync-token>
+                    <d:current-user-privilege-set>
+                      <d:privilege><d:read /></d:privilege>
+                    </d:current-user-privilege-set>
+                  </d:prop>
+                  <d:status>HTTP/1.1 200 OK</d:status>
+                </d:propstat>
+              </d:response>
+            </d:multistatus>`, { status: 207 }));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const { discoverAppleCalendars } = await import('@/lib/apple-caldav/client');
+        const result = await discoverAppleCalendars({
+            username: 'parent@example.com',
+            password: 'app-password',
+            principalUrl: 'https://caldav.icloud.com/12345/principal/',
+            calendarHomeUrl: 'https://caldav.icloud.com/12345/calendars/',
+        });
+
+        const writable = result.calendars.find((calendar) => calendar.remoteCalendarId === 'personal');
+        const readOnly = result.calendars.find((calendar) => calendar.remoteCalendarId === 'holidays');
+        expect(writable?.canWrite).toBe(true);
+        expect(readOnly?.canWrite).toBe(false);
+    });
+
     it('flags invalid sync tokens so the sync engine can fall back to a full scan', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('invalid sync token', { status: 409 })));
 

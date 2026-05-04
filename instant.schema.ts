@@ -95,6 +95,8 @@ const _schema = i.schema({
             sourceCalendarName: i.string().optional(),
             sourceExternalId: i.string().unique().indexed().optional(),
             sourceImportedAt: i.string().indexed().optional(),
+            sourceLastErrorMessage: i.string().optional(),
+            sourceLastPushedAt: i.string().indexed().optional(),
             sourceLastSeenAt: i.string().indexed().optional(),
             sourceRawHash: i.string().indexed().optional(),
             sourceReadOnly: i.boolean().indexed().optional(),
@@ -140,6 +142,7 @@ const _schema = i.schema({
         }),
         calendarSyncCalendars: i.entity({
             accountId: i.string().indexed(),
+            canWrite: i.boolean().indexed().optional(),
             color: i.string().optional(),
             createdAt: i.string().indexed(),
             description: i.string().optional(),

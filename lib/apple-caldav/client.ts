@@ -74,6 +74,18 @@ function syncTokenOf(multistatus: any) {
     return textOf(multistatus?.['sync-token']);
 }
 
+function calendarCanWriteFromPrivilegeSet(privilegeSet: any): boolean {
+    const privileges = asArray(privilegeSet?.privilege);
+    for (const entry of privileges) {
+        if (!entry || typeof entry !== 'object') continue;
+        for (const key of Object.keys(entry)) {
+            if (key === '#text') continue;
+            if (key === 'write' || key === 'write-content' || key === 'all') return true;
+        }
+    }
+    return false;
+}
+
 async function caldavRequest(url: string, input: {
     method: string;
     username: string;
@@ -187,6 +199,7 @@ async function listCalendarsAtHome(input: { username: string; password: string; 
                 <ical:calendar-color />
                 <d:resourcetype />
                 <d:sync-token />
+                <d:current-user-privilege-set />
               </d:prop>
             </d:propfind>`,
     });
@@ -206,6 +219,7 @@ async function listCalendarsAtHome(input: { username: string; password: string; 
                 timeZone: textOf(getResponseProperty(entry, 'calendar-timezone')) || '',
                 ctag: textOf(getResponseProperty(entry, 'getctag')) || '',
                 syncToken: textOf(getResponseProperty(entry, 'sync-token')) || '',
+                canWrite: calendarCanWriteFromPrivilegeSet(getResponseProperty(entry, 'current-user-privilege-set')),
             };
         })
         .filter(Boolean)
@@ -233,6 +247,7 @@ export async function fetchCalendarCollectionMetadata(input: {
                 <cd:calendar-description />
                 <cd:calendar-timezone />
                 <ical:calendar-color />
+                <d:current-user-privilege-set />
               </d:prop>
             </d:propfind>`,
     });
@@ -249,6 +264,7 @@ export async function fetchCalendarCollectionMetadata(input: {
         timeZone: textOf(getResponseProperty(entry, 'calendar-timezone')) || '',
         ctag: textOf(getResponseProperty(entry, 'getctag')) || '',
         syncToken: textOf(getResponseProperty(entry, 'sync-token')) || '',
+        canWrite: calendarCanWriteFromPrivilegeSet(getResponseProperty(entry, 'current-user-privilege-set')),
     };
 }
 

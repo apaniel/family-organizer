@@ -54,6 +54,24 @@ async function failureFor(response: Response, defaultMessage: string): Promise<E
     return error;
 }
 
+export async function fetchAppleCalendarObject(input: {
+    username: string;
+    password: string;
+    url: string;
+}): Promise<{ ics: string; etag: string }> {
+    const response = await fetch(input.url, {
+        method: 'GET',
+        headers: basicAuthHeader(input.username, input.password),
+        cache: 'no-store',
+    });
+
+    if (response.status === 404) throw new CalDAVNotFoundError();
+    if (!response.ok) throw await failureFor(response, 'CalDAV fetch failed');
+
+    const ics = await response.text();
+    return { ics, etag: extractEtag(response) };
+}
+
 export async function createAppleCalendarObject(input: {
     username: string;
     password: string;

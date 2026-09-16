@@ -234,3 +234,6 @@
   height: 0;
 }
 
+
+/* Family Mission Control: shared tokens also reach dialog portals. */
+:root { --mc-ink:#18243a; --mc-blue:#345de3; --mc-muted:#66728a; --mc-line:#e4e8f0; --mc-bg:#f4f6fa; }

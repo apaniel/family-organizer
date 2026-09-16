@@ -36,5 +36,13 @@
     "crons": [
       "*/5 * * * *"
     ]
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "FAMILY_DB",
+      "database_name": "family-mission-control",
+      "database_id": "1564403b-5854-43f2-8df7-be6e6a09140e",
+      "migrations_dir": "migrations"
+    }
+  ]
 }

@@ -16,7 +16,7 @@ const PUBLIC_ALLOWLIST_PATHS = [
     '/api/device-activate',
 ];
 const PUBLIC_ALLOWLIST_PREFIXES = ['/api/mobile/'];
-const API_ROUTE_AUTH_PREFIXES = ['/api/calendar-sync/'];
+const API_ROUTE_AUTH_PREFIXES = ['/api/calendar-sync/', '/api/family/'];
 
 export function middleware(request: NextRequest) {
     // 1. Read the key INSIDE the function to ensure we get the runtime value

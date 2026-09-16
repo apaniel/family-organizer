@@ -1,6 +1,7 @@
 import localFont from 'next/font/local';
 import type { Metadata, Viewport } from 'next'; // Added Viewport type
 import './globals.css';
+import {LegacyChrome,MissionMain} from '@/components/mission/MissionChrome';
 import { Toaster } from '@/components/ui/toaster';
 import DebugTimeWidget from '@/components/debug/DebugTimeWidget';
 // +++ NEW: Imports for Auth and Navigation +++
@@ -58,14 +59,14 @@ export const viewport: Viewport = {
     themeColor: '#ffffff', // Changes the color of the status bar on iOS
     width: 'device-width',
     initialScale: 1,
-    maximumScale: 1, // Disables auto-zoom on inputs, making it feel like a native app
-    userScalable: false, // Prevents pinch-to-zoom
+    maximumScale: 5, // Disables auto-zoom on inputs, making it feel like a native app
+    userScalable: true, // Prevents pinch-to-zoom
 };
 
 // +++ MODIFIED: Metadata for iOS PWA support +++
 export const metadata: Metadata = {
-    title: 'Family Organizer',
-    description: 'Family Organizer App',
+    title: 'Apalas · En familia',
+    description: 'El calendario, los planes y el día a día de nuestra familia.',
     manifest: '/manifest.json', // You must create this file in /public
     appleWebApp: {
         capable: true, // This is crucial: it hides the Safari UI (address bar)
@@ -120,7 +121,7 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="en">
+        <html lang="es">
             <head>
                 {/* Inject blocking script here */}
                 <script dangerouslySetInnerHTML={{ __html: timeMachineScript }} />
@@ -132,7 +133,7 @@ export default function RootLayout({
                     <AuthProvider>
                       <DashboardThemeProvider>
                         {/* +++ Global Header +++ */}
-                        <ThemedHeader>
+                        <LegacyChrome><ThemedHeader>
                             <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-6">
                                 <Link
                                     href="/"
@@ -150,15 +151,15 @@ export default function RootLayout({
                                 <NavbarDate />
                                 <UserMenu />
                             </div>
-                        </ThemedHeader>
+                        </ThemedHeader></LegacyChrome>
 
                         {/* +++ Main Content +++ */}
-                        <ThemedMain>
+                        <MissionMain>
                             <FamilyAppGate>{children}</FamilyAppGate>
-                        </ThemedMain>
+                        </MissionMain>
 
                         <Toaster />
-                        <DebugTimeWidget />
+                        <LegacyChrome><DebugTimeWidget /></LegacyChrome>
                         <MessageNotificationBridge />
                         <PwaServiceWorkerRegistration />
                       </DashboardThemeProvider>

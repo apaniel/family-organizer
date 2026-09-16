@@ -1,5 +1,6 @@
 // middleware.ts
 import { NextResponse } from 'next/server';
+import { isVerifiedFamilyParent } from '@/lib/cloudflare-family-access';
 import type { NextRequest } from 'next/server';
 import { DEVICE_AUTH_COOKIE_NAME, DEVICE_AUTH_COOKIE_VALUE, getDeviceAuthCookieOptions } from '@/lib/device-auth';
 
@@ -18,7 +19,7 @@ const PUBLIC_ALLOWLIST_PATHS = [
 const PUBLIC_ALLOWLIST_PREFIXES = ['/api/mobile/'];
 const API_ROUTE_AUTH_PREFIXES = ['/api/calendar-sync/', '/api/family/'];
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
     // 1. Read the key INSIDE the function to ensure we get the runtime value
     const SECRET_KEY = process.env.DEVICE_ACCESS_KEY;
 
@@ -40,6 +41,14 @@ export function middleware(request: NextRequest) {
     const deviceCookie = request.cookies.get(DEVICE_AUTH_COOKIE_NAME);
     if (deviceCookie && deviceCookie.value === DEVICE_AUTH_COOKIE_VALUE) {
         return NextResponse.next();
+    }
+
+    // Cloudflare login already verifies these explicitly authorized parents.
+    // Do not trust an email header or an unsigned JWT payload.
+    if (await isVerifiedFamilyParent(request.headers.get('cf-access-jwt-assertion'))) {
+        const response = NextResponse.next();
+        response.cookies.set(DEVICE_AUTH_COOKIE_NAME, DEVICE_AUTH_COOKIE_VALUE, getDeviceAuthCookieOptions());
+        return response;
     }
 
     // --- C. ACTIVATE: Check if this is the Magic Link ---

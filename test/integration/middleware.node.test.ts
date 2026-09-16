@@ -1,76 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
-import { middleware } from '@/middleware';
-
-vi.mock('@/lib/cloudflare-family-access', () => ({ isVerifiedFamilyParent: vi.fn(async () => false) }));
-import { isVerifiedFamilyParent } from '@/lib/cloudflare-family-access';
-
-describe('middleware device auth gate', () => {
-    beforeEach(() => {
-        vi.mocked(isVerifiedFamilyParent).mockResolvedValue(false);
-        process.env.DEVICE_ACCESS_KEY = 'test-device-key';
-        (process.env as any).NODE_ENV = 'test';
-    });
-
-    it('activates the device after verified Cloudflare parent login', async () => {
-        vi.mocked(isVerifiedFamilyParent).mockResolvedValue(true);
-        const response = await middleware(new NextRequest('https://apalas.apaniel.dev/', {headers:{'cf-access-jwt-assertion':'verified-by-helper'}}));
-        expect(response.headers.get('x-middleware-next')).toBe('1');
-        expect(response.headers.get('set-cookie')).toContain('family_device_auth=true');
-    });
-
-    it('returns 401 JSON for unauthorized API requests', async () => {
-        const response = await middleware(new NextRequest('http://localhost:3000/api/instant-auth-token'));
-        expect(response.status).toBe(401);
-        expect(await response.text()).toContain('Unauthorized Device');
-    });
-
-    it('returns hard 404 for unauthorized page requests', async () => {
-        const response = await middleware(new NextRequest('http://localhost:3000/'));
-        expect(response.status).toBe(404);
-        expect(await response.text()).toBe('Not Found');
-    });
-
-    it('activates device auth via the magic link and sets the cookie', async () => {
-        const response = await middleware(new NextRequest('http://localhost:3000/?activate=test-device-key'));
-        expect(response.status).toBe(307);
-        expect(response.headers.get('location')).toMatch(/\/$/);
-        expect(response.headers.get('set-cookie')).toContain('family_device_auth=true');
-    });
-
-    it('passes through when the device auth cookie is present', async () => {
-        const response = await middleware(
-            new NextRequest('http://localhost:3000/', {
-                headers: { cookie: 'family_device_auth=true' },
-            })
-        );
-
-        expect(response.headers.get('x-middleware-next')).toBe('1');
-    });
-
-    it('allows offline shell and manifest assets without device auth', async () => {
-        const manifestResponse = await middleware(new NextRequest('http://localhost:3000/manifest.json'));
-        const offlineResponse = await middleware(new NextRequest('http://localhost:3000/offline.html'));
-        const activateResponse = await middleware(new NextRequest('http://localhost:3000/activate'));
-        const deviceActivateApiResponse = await middleware(new NextRequest('http://localhost:3000/api/device-activate'));
-        const mobileApiResponse = await middleware(new NextRequest('http://localhost:3000/api/mobile/device-activate'));
-        const calendarSyncRunResponse = await middleware(new NextRequest('http://localhost:3000/api/calendar-sync/apple/run'));
-
-        expect(manifestResponse.headers.get('x-middleware-next')).toBe('1');
-        expect(offlineResponse.headers.get('x-middleware-next')).toBe('1');
-        expect(activateResponse.headers.get('x-middleware-next')).toBe('1');
-        expect(deviceActivateApiResponse.headers.get('x-middleware-next')).toBe('1');
-        expect(mobileApiResponse.headers.get('x-middleware-next')).toBe('1');
-        expect(calendarSyncRunResponse.headers.get('x-middleware-next')).toBe('1');
-    });
-
-    it('blocks legacy upload and delete-image routes without device auth', async () => {
-        const uploadApiResponse = await middleware(new NextRequest('http://localhost:3000/api/upload'));
-        const deleteImageApiResponse = await middleware(new NextRequest('http://localhost:3000/api/delete-image'));
-
-        expect(uploadApiResponse.status).toBe(401);
-        expect(await uploadApiResponse.text()).toContain('Unauthorized Device');
-        expect(deleteImageApiResponse.status).toBe(401);
-        expect(await deleteImageApiResponse.text()).toContain('Unauthorized Device');
-    });
+import {beforeEach,describe,it,expect,vi} from 'vitest';
+import {NextRequest} from 'next/server';
+vi.mock('@/lib/cloudflare-family-access',()=>({isVerifiedFamilyParent:vi.fn(async()=>false)}));
+import {isVerifiedFamilyParent} from '@/lib/cloudflare-family-access';
+import {middleware} from '@/middleware';
+import {requireCalendarSyncRouteAuth} from '@/lib/calendar-sync-auth';
+describe('email-only family access',()=>{
+ beforeEach(()=>{vi.mocked(isVerifiedFamilyParent).mockResolvedValue(false);process.env.CALENDAR_SYNC_CRON_SECRET='test-service';});
+ it('lets verified email users enter without device cookies or PIN',async()=>{vi.mocked(isVerifiedFamilyParent).mockResolvedValue(true);const r=await middleware(new NextRequest('https://apalas.apaniel.dev/'));expect(r.headers.get('x-middleware-next')).toBe('1');expect(r.headers.get('set-cookie')).toBeNull();});
+ it('rejects the old device-cookie bypass',async()=>{const r=await middleware(new NextRequest('https://apalas.apaniel.dev/',{headers:{cookie:'family_device_auth=true'}}));expect(r.status).toBe(403);});
+ it('retires the PIN API',async()=>{expect((await middleware(new NextRequest('https://apalas.apaniel.dev/api/instant-auth-parent-token'))).status).toBe(404);});
+ it('routes legacy bookmarks back to the new planner',async()=>{vi.mocked(isVerifiedFamilyParent).mockResolvedValue(true);expect((await middleware(new NextRequest('https://apalas.apaniel.dev/legacy'))).headers.get('location')).toBe('https://apalas.apaniel.dev/');});
+ it('uses verified email for data access',async()=>{vi.mocked(isVerifiedFamilyParent).mockResolvedValue(true);expect((await requireCalendarSyncRouteAuth(new NextRequest('https://apalas.apaniel.dev/api/family/records'))).authorized).toBe(true);});
+ it('keeps the Hermes service working',async()=>{expect((await requireCalendarSyncRouteAuth(new NextRequest('https://apalas.apaniel.dev/api/family/records',{headers:{'x-calendar-sync-secret':'test-service'}}))).authorized).toBe(true);});
+ it('does not accept old parent tokens or cookies for data access',async()=>{expect((await requireCalendarSyncRouteAuth(new NextRequest('https://apalas.apaniel.dev/api/family/records',{headers:{cookie:'family_device_auth=true','x-instant-auth-token':'old-token'}}))).authorized).toBe(false);});
 });

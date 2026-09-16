@@ -4,7 +4,7 @@ description: Keep the Apalas family planner up to date from family requests, ema
 ---
 # Family Mission Control
 
-The shared planner is https://apalas.apaniel.dev. Its records persist in Cloudflare D1. Use them as the source of truth, alongside the losapalas Google calendar. The old organizer is retained at /legacy. Hermes can now read and create events on losapalas@gmail.com using the calendar broker below. Dashboard form events remain local unless explicitly published with that broker; never claim automatic two-way sync.
+The shared planner is https://apalas.apaniel.dev. Its records persist in Cloudflare D1. Use them as the source of truth, alongside the losapalas Google calendar. The old organizer is retired. Dashboard login is approved email only; there is no PIN or profile chooser. Hermes can now read and create events on losapalas@gmail.com using the calendar broker below. Dashboard form events remain local unless explicitly published with that broker; never claim automatic two-way sync.
 
 Use this helper only inside the familia profile:
 ```sh

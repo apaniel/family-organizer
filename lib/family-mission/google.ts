@@ -1,6 +1,6 @@
 import 'server-only';
 import ICAL from 'ical.js';
-import {validateGoogleCalendarFeed} from '@/lib/google-calendar/sync';
+import {validateGoogleCalendarFeed} from './feed';
 import {dateKey,addDays,type FamilyRecord} from './model';
 export function expandGoogleCalendar(ics:string,from:string,to:string):FamilyRecord[]{
  const root=new ICAL.Component(ICAL.parse(ics));

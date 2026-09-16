@@ -1,6 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
 vi.mock('server-only',()=>({}));
-vi.mock('@/lib/google-calendar/sync',()=>({validateGoogleCalendarFeed:(x:string)=>x}));
 import {validateRecord,occursOn,reminderCandidates,addDays,dateKey,type FamilyRecord} from '@/lib/family-mission/model';
 import {expandGoogleCalendar} from '@/lib/family-mission/google';
 const task=(patch:any={}):FamilyRecord=>({...validateRecord({kind:'task',title:'Mochila',date:'2026-09-16',...patch}),id:'one',revision:1});

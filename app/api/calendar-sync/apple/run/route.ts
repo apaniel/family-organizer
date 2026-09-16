@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCalendarSyncAuthError, requireCalendarSyncRouteAuth } from '@/lib/calendar-sync-auth';
+import { runGoogleCalendarSync } from '@/lib/google-calendar/sync';
 import { runAppleCalendarSync } from '@/lib/apple-caldav/sync';
 
 export const dynamic = 'force-dynamic';
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const result = await runAppleCalendarSync({
+        const result = process.env.GOOGLE_CALENDAR_ICS_URL ? await runGoogleCalendarSync() : await runAppleCalendarSync({
             accountId: body?.accountId ? String(body.accountId) : undefined,
             trigger: body?.trigger ? String(body.trigger) : auth.kind === 'cron' ? 'cron' : 'manual',
         });

@@ -2932,7 +2932,7 @@ const AddEventForm = ({
             </div>
             {isImportedEvent ? (
                 <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-                    Apple-synced events are fully editable here for now, including delete. Those changes stay local to Family Organizer until a future Apple sync rewrites them.
+                    Imported calendar events can be edited locally. These changes do not update the source calendar and may be overwritten by the next sync. Edit Google Calendar to make lasting changes.
                 </div>
             ) : null}
             <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">

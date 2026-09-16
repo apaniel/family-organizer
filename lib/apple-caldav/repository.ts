@@ -421,6 +421,7 @@ export function shouldHardDeleteImportedCalendarItem(input: {
 }
 
 export async function upsertImportedCalendarItems(input: {
+    historySource?: string;
     accountId: string;
     calendarId: string;
     calendarName: string;
@@ -466,7 +467,7 @@ export async function upsertImportedCalendarItems(input: {
             domain: 'calendar',
             actionType: 'calendar_event_deleted',
             summary: `Deleted event "${String(existingItem.title || 'Untitled event')}"`,
-            source: 'apple_sync',
+            source: input.historySource || 'apple_sync',
             calendarItemId: existingItem.id,
             metadata: buildCalendarHistoryMetadata({
                 title: String(existingItem.title || 'Untitled event'),
@@ -509,7 +510,7 @@ export async function upsertImportedCalendarItems(input: {
             domain: 'calendar',
             actionType: existingItem ? 'calendar_event_updated' : 'calendar_event_created',
             summary: `${existingItem ? 'Updated' : 'Imported'} event "${String(item.title || 'Untitled event')}"`,
-            source: 'apple_sync',
+            source: input.historySource || 'apple_sync',
             calendarItemId: targetItemId,
             metadata: buildCalendarHistoryMetadata({
                 title: String(item.title || 'Untitled event'),

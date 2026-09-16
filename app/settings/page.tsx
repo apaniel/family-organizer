@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import AppleCalendarSyncSettings from '@/components/AppleCalendarSyncSettings';
+import GoogleCalendarSyncSettings from '@/components/GoogleCalendarSyncSettings';
 import CountdownSettings from '@/components/CountdownSettings';
 import CurrencySettings from '@/components/CurrencySettings';
 import DashboardSettingsPanel from '@/components/DashboardSettingsPanel';
@@ -57,7 +57,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="mt-8">
-                    <AppleCalendarSyncSettings />
+                    <GoogleCalendarSyncSettings />
                 </div>
             </div>
         </ParentGate>

@@ -1,5 +1,5 @@
 export type HistoryDomain = 'tasks' | 'chores' | 'calendar' | 'finance' | 'messages' | 'system';
-export type HistorySource = 'manual' | 'apple_sync' | 'system';
+export type HistorySource = 'manual' | 'apple_sync' | 'google_sync' | 'system';
 export type HistoryFilterMode = 'off' | 'include' | 'exclude';
 
 export interface HistoryAttachmentInput {

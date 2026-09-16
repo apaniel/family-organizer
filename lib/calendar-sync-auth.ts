@@ -71,7 +71,7 @@ export function getCalendarSyncAuthError(reason: string | undefined) {
         case 'parent_required':
             return {
                 error: 'Parent authorization required',
-                message: 'Switch into parent mode again, then retry Apple Calendar sync.',
+                message: 'Switch into parent mode again, then retry calendar sync.',
             };
         case 'missing':
             return {

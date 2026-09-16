@@ -929,7 +929,7 @@ const mergeCalendarItemsWithOptimistic = (
 };
 
 const shouldHideImportedCalendarItem = (item: CalendarItem) => {
-    const isAppleImported = String(item.sourceType || '').trim() === 'apple-caldav';
+    const isAppleImported = ['apple-caldav', 'google-calendar'].includes(String(item.sourceType || '').trim());
     if (!isAppleImported) {
         return false;
     }

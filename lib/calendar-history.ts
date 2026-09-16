@@ -512,7 +512,7 @@ export function getCalendarHistoryHeadline(events: HistoryEventLike[]) {
         return `Deleted event "${title}"`;
     }
     if (String(first.actionType || '') === 'calendar_event_created') {
-        return String(first.source || '') === 'apple_sync' ? `Imported event "${title}"` : `Created event "${title}"`;
+        return ['apple_sync', 'google_sync'].includes(String(first.source || '')) ? `Imported event "${title}"` : `Created event "${title}"`;
     }
     if (chronological.every((event) => String(event.actionType || '') === 'calendar_event_moved')) {
         return `Moved event "${title}"`;
@@ -520,7 +520,7 @@ export function getCalendarHistoryHeadline(events: HistoryEventLike[]) {
     if (chronological.every((event) => String(event.actionType || '') === 'calendar_event_resized')) {
         return `Resized event "${title}"`;
     }
-    if (String(last.source || '') === 'apple_sync') {
+    if (['apple_sync', 'google_sync'].includes(String(last.source || ''))) {
         return `Updated imported event "${title}"`;
     }
     return `Updated event "${title}"`;

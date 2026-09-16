@@ -23,7 +23,9 @@
     "task:latest-feedback": "node scripts/print-latest-task-feedback.js",
     "backfill:savings-envelopes": "node scripts/backfill-savings-envelopes.js",
     "backfill:calendar-events": "node scripts/backfill-calendar-events.js",
-    "calendar-sync:worker": "node scripts/apple-calendar-sync-worker.js"
+    "calendar-sync:worker": "node scripts/apple-calendar-sync-worker.js",
+    "build:cloudflare": "opennextjs-cloudflare build",
+    "deploy:cloudflare": "opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "@atlaskit/pragmatic-drag-and-drop": "^1.7.7",
@@ -94,7 +96,9 @@
     "yet-another-react-lightbox": "^3.29.1"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.6",
     "@playwright/test": "^1.58.2",
+    "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -109,6 +113,7 @@
     "tailwindcss": "^3.4.10",
     "typescript": "^5.3.3",
     "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "wrangler": "^4.132.0"
   }
 }

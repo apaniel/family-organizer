@@ -597,8 +597,8 @@ export default function HistoryPage({
                                             <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-700">
                                                 {HISTORY_DOMAIN_LABELS[(event.domain as keyof typeof HISTORY_DOMAIN_LABELS) || 'system'] || event.domain}
                                             </span>
-                                            {event.source === 'apple_sync' ? (
-                                                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">Apple Sync</span>
+                                            {['apple_sync', 'google_sync'].includes(event.source || '') ? (
+                                                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">{event.source === 'google_sync' ? 'Google Sync' : 'Apple Sync'}</span>
                                             ) : null}
                                             <span>{formatOccurredAt(event.occurredAt)}</span>
                                         </div>
@@ -698,7 +698,7 @@ export default function HistoryPage({
                                                                 <div key={detailEvent.id} className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
                                                                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                                                                         <span>{formatOccurredAt(detailEvent.occurredAt)}</span>
-                                                                        {detailEvent.source === 'apple_sync' ? <span>Apple Sync</span> : null}
+                                                                        {['apple_sync', 'google_sync'].includes(detailEvent.source || '') ? <span>{detailEvent.source === 'google_sync' ? 'Google Sync' : 'Apple Sync'}</span> : null}
                                                                     </div>
                                                                     <div className="mt-1 text-sm font-medium text-slate-900">{detailEvent.summary}</div>
                                                                     {detailText ? (
@@ -760,7 +760,7 @@ export default function HistoryPage({
                                     <div key={detailEvent.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                                         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                                             <span>{formatOccurredAt(detailEvent.occurredAt)}</span>
-                                            {detailEvent.source === 'apple_sync' ? <span>Apple Sync</span> : null}
+                                            {['apple_sync', 'google_sync'].includes(detailEvent.source || '') ? <span>{detailEvent.source === 'google_sync' ? 'Google Sync' : 'Apple Sync'}</span> : null}
                                         </div>
                                         <div className="mt-2 text-sm font-semibold text-slate-900">{detailEvent.summary}</div>
                                         {detailText ? <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{detailText}</div> : null}

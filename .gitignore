@@ -62,3 +62,7 @@ dist/
 
 mobile/eas.json
 
+
+.open-next/
+.wrangler/
+.dev.vars*

@@ -1,0 +1,16 @@
+[Unit]
+Description=Family Google Calendar broker (read/create, no invitations)
+After=network-online.target
+[Service]
+ExecStart=/opt/hermes-mail-venv/bin/python /opt/hermes-calendar/server.py
+Restart=on-failure
+RuntimeDirectory=hermes-calendar
+RuntimeDirectoryMode=0755
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hermes-calendar /run/hermes-calendar
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target

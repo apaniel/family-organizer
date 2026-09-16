@@ -39,6 +39,11 @@ describe('private Google calendar import', () => {
         expect(JSON.stringify(vi.mocked(repo.upsertCalendarSyncAccount).mock.calls)).not.toContain('private-');
         expect(repo.releaseCalendarSyncLock).toHaveBeenCalledWith('lock');
     });
+    it('rejects redirects without forwarding the private URL to another host', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, {status:302, headers:{Location:'https://other.test/'}})));
+        await expect(runGoogleCalendarSync()).rejects.toThrow('HTTP 302');
+        expect(repo.upsertImportedCalendarItems).not.toHaveBeenCalled();
+    });
     it('rejects malformed successful responses without deleting events', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>error</html>')));
         await expect(runGoogleCalendarSync()).rejects.toThrow('Invalid Google Calendar feed');
@@ -47,7 +52,7 @@ describe('private Google calendar import', () => {
     it('imports a complete feed read-only with soft deletions scoped to Google', async () => {
         const fetcher = vi.fn().mockResolvedValue(new Response(ics)); vi.stubGlobal('fetch',fetcher);
         await runGoogleCalendarSync();
-        expect(fetcher.mock.calls[0][1]).toMatchObject({redirect:'error',cache:'no-store'});
+        expect(fetcher.mock.calls[0][1]).toMatchObject({redirect:'manual',cache:'no-store'});
         expect(repo.upsertImportedCalendarItems).toHaveBeenCalledWith(expect.objectContaining({accountId:'account',calendarId:'losapalas@gmail.com',hardDeleteMissingRows:false,historySource:'google_sync'}));
     });
 });

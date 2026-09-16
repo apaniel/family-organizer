@@ -14,3 +14,5 @@ A failed download or parse does not reconcile/delete events. Repeated imports us
 Build with NEXT_PUBLIC_INSTANT_APP_ID set to the existing production app ID and npm run build:cloudflare.
 Deploy with npm run deploy:cloudflare. The configuration preserves the existing R2 cache, domain and secrets.
 Do not create a new InstantDB app or overwrite the family data. Secrets and feed authorization require no Hermes restart.
+
+Runtime note: use fetch redirect mode `manual` and reject non-success responses. The configured Cloudflare runtime rejects `redirect: error` before issuing the request. Do not follow redirects with a private subscription URL.

@@ -12,3 +12,7 @@ A small family planner: today/tomorrow tasks, calendar, and weekly adult/kids me
 `npm run dev`, `npm test`, `npm run build:cloudflare`, `npm run deploy:cloudflare`.
 
 The previous organizer, mobile app, and PIN code were retired. Git history preserves their source. Existing new-planner records are unchanged.
+
+
+## Family artifacts
+Private self-contained HTML artifacts are stored in D1 family_artifacts and published through /api/family/artifacts. The existing family service credential or verified approved email is required for every request. Responses use CSP sandbox with scripts but without same-origin privileges, network connections, forms or frame embedding; interactions are transient. Content-addressed immutable snapshots deduplicate retries. Familia uses tools/family_artifacts.py and the family-artifacts skill; no broad Cloudflare credential is needed. Apply migrations/0002_family_artifacts.sql before deployment.

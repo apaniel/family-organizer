@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS family_artifacts (
+ id TEXT PRIMARY KEY, title TEXT NOT NULL, html TEXT NOT NULL, created_at TEXT NOT NULL
+);

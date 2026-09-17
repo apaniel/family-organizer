@@ -24,6 +24,10 @@
     {
       "binding": "NEXT_INC_CACHE_R2_BUCKET",
       "bucket_name": "family-organizer-next-cache"
+    },
+    {
+      "binding": "FAMILY_DOCUMENTS",
+      "bucket_name": "family-mission-documents"
     }
   ],
   "routes": [

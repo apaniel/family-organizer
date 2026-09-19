@@ -10,3 +10,8 @@ describe('activity proposals',()=>{
  it('rejects unsafe sources and malformed data',()=>{expect(readActivityArtifact(wrap([p('bad',{url:'javascript:alert(1)'})]))).toBeNull();expect(readActivityArtifact('old HTML without data')).toBeNull();});
  it('preserves measured distances and treats absent distance as unknown',()=>{const d=readActivityArtifact(wrap([p('near',{distanceKm:4.2}),p('unknown')]));expect(d!.plans.map(x=>x.distanceKm)).toEqual([4.2,null]);});
 });
+
+it('allows embedded raster photos but not remote or executable image payloads',()=>{
+ const data=readActivityArtifact(wrap([p('jpg',{photo:'data:image/jpeg;base64,/9j/AA=='}),p('remote',{photo:'https://tracker.example/photo.jpg'}),p('svg',{photo:'data:image/svg+xml;base64,AAAA'})]));
+ expect(data!.plans[0].photo).toBeDefined();expect(data!.plans[1].photo).toBeUndefined();expect(data!.plans[2].photo).toBeUndefined();
+});

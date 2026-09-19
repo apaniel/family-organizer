@@ -1,0 +1,10 @@
+export type ActivityPlan={id:string;title:string;icon:string;window:string;description:string;price:string;duration:string;distanceKm:number|null;distanceMode:string;location:string;deadline:string|null;bookingDeadline:string|null;status:string;note:string;url:string;indoor:boolean;ageNote:string};
+const date=(v:unknown)=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&new Date(v+'T12:00:00Z').toISOString().slice(0,10)===v?v:null;
+export function readActivityArtifact(html:string):{checkedAt:string;plans:ActivityPlan[]}|null{
+ const match=html.match(/<script\s+id="family-activity-data"\s+type="application\/json">([\s\S]*?)<\/script>/i);if(!match)return null;
+ try{const data=JSON.parse(match[1]);if(data.version!==1||!Array.isArray(data.plans)||data.plans.length>80)return null;
+ const plans=data.plans.map((p:any)=>{const text=(key:string,max=1500)=>typeof p[key]==='string'?p[key].slice(0,max):'';const url=new URL(p.url);if(url.protocol!=='https:')throw Error('Unsafe URL');if(!p.id||!p.title)throw Error('Missing title');return {id:text('id',100),title:text('title',200),icon:text('icon',12),window:text('window',100),description:text('description'),price:text('price',100),duration:text('duration',100),distanceKm:typeof p.distanceKm==='number'&&Number.isFinite(p.distanceKm)&&p.distanceKm>=0?p.distanceKm:null,distanceMode:text('distanceMode',50),location:text('location',200),deadline:date(p.deadline),bookingDeadline:date(p.bookingDeadline),status:text('status',30),note:text('note'),url:url.href,indoor:p.indoor===true,ageNote:text('ageNote',300)};});
+ return {checkedAt:date(data.checkedAt)||'',plans};}catch{return null;}
+}
+export function activityDeadline(p:ActivityPlan){return [p.deadline,p.bookingDeadline].filter((d):d is string=>!!d).sort()[0]||null;}
+export function sortedActivities(plans:ActivityPlan[],today:string){return plans.filter(p=>!p.deadline||p.deadline>=today).sort((a,b)=>(activityDeadline(a)||'9999').localeCompare(activityDeadline(b)||'9999')||a.title.localeCompare(b.title));}

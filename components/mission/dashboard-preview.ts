@@ -1,6 +1,9 @@
 export type PreviewAnswer={text:string;script:string|null};
+type LivePreview={id:string;script:string;cleanup:()=>void};
+declare global{interface Window{__APALAS_LIVE_PREVIEW__?:LivePreview}}
 
 const previewBlock=/```apalas-preview-js\s*\n([\s\S]*?)```/g;
+const forbidden=/\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB|cookie|location|history|navigator|Worker|SharedWorker|eval|Function|import|setTimeout|setInterval|requestAnimationFrame)\b|<\/?(?:script|iframe|object|embed|form)\b/i;
 
 export function parsePreviewAnswer(answer:string):PreviewAnswer{
  let script:string|null=null;
@@ -8,30 +11,39 @@ export function parsePreviewAnswer(answer:string):PreviewAnswer{
  return {text,script};
 }
 
-function serializedStyles(){
- return Array.from(document.styleSheets).map(sheet=>{
-  try{return Array.from(sheet.cssRules).map(rule=>rule.cssText).join('\n');}catch{return '';}
- }).filter(Boolean).join('\n');
+function validate(script:string){if(!script.trim()||script.length>20000||forbidden.test(script))throw new Error('Vista previa no segura');}
+
+function execute(script:string){
+ validate(script);
+ const mutations:MutationRecord[]=[];
+ const observer=new MutationObserver(records=>mutations.push(...records));
+ observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeOldValue:true,characterData:true,characterDataOldValue:true});
+ try{new Function('document','window','"use strict";\n'+script)(document,window);mutations.push(...observer.takeRecords());observer.disconnect();}catch(error){observer.disconnect();throw error;}
+ return ()=>{
+  for(const mutation of mutations.reverse()){
+   if(mutation.type==='attributes'&&mutation.target instanceof Element&&mutation.attributeName){if(mutation.oldValue===null)mutation.target.removeAttribute(mutation.attributeName);else mutation.target.setAttribute(mutation.attributeName,mutation.oldValue);}
+   else if(mutation.type==='characterData')mutation.target.nodeValue=mutation.oldValue;
+   else if(mutation.type==='childList'){
+    Array.from(mutation.addedNodes).reverse().forEach(node=>{if(node.parentNode)node.parentNode.removeChild(node);});
+    Array.from(mutation.removedNodes).forEach(node=>{const target=mutation.target;if(mutation.nextSibling&&mutation.nextSibling.parentNode===target)target.insertBefore(node,mutation.nextSibling);else target.appendChild(node);});
+   }
+  }
+ };
 }
 
-export function buildPreviewDocument(script:string){
- const clone=document.documentElement.cloneNode(true) as HTMLElement;
- clone.querySelectorAll('script,iframe,object,embed,link[rel="stylesheet"],.fc-launch').forEach(node=>node.remove());
- clone.querySelectorAll('*').forEach(node=>{
-  for(const attribute of Array.from(node.attributes))if(attribute.name.toLowerCase().startsWith('on'))node.removeAttribute(attribute.name);
- });
- const body=clone.querySelector('body');
- body?.removeAttribute('data-scroll-locked');
- if(body){body.style.removeProperty('overflow');body.style.removeProperty('pointer-events');}
- const head=clone.querySelector('head');
- head?.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(node=>node.remove());
- const meta=document.createElement('meta');
- meta.setAttribute('http-equiv','Content-Security-Policy');
- meta.setAttribute('content',"default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; script-src 'unsafe-inline'");
- const style=document.createElement('style');style.textContent=serializedStyles();
- head?.prepend(meta,style);
- const runner=document.createElement('script');
- runner.textContent=`(()=>{try{${script.replace(/<\/script/gi,'<\\/script')}}catch(error){document.body.insertAdjacentHTML('afterbegin','<div style="position:fixed;inset:16px 16px auto;z-index:2147483647;padding:12px 16px;border-radius:10px;background:#fff0f0;color:#8a1f1f;font:14px system-ui">No se pudo aplicar esta vista previa.</div>')}})();`;
- body?.append(runner);
- return '<!doctype html>'+clone.outerHTML;
+export function startDashboardPreview(id:string,script:string){
+ if(typeof window==='undefined')return;
+ window.__APALAS_LIVE_PREVIEW__?.cleanup();
+ window.__APALAS_LIVE_PREVIEW__={id,script,cleanup:execute(script)};
 }
+
+export function reapplyDashboardPreview(){
+ if(typeof window==='undefined'||!window.__APALAS_LIVE_PREVIEW__)return null;
+ const {id,script,cleanup}=window.__APALAS_LIVE_PREVIEW__;cleanup();
+ window.__APALAS_LIVE_PREVIEW__={id,script,cleanup:execute(script)};
+ return {id,script};
+}
+
+export function activeDashboardPreview(){if(typeof window==='undefined')return null;const value=window.__APALAS_LIVE_PREVIEW__;return value?{id:value.id,script:value.script}:null;}
+
+export function discardDashboardPreview(){if(typeof window==='undefined')return;window.__APALAS_LIVE_PREVIEW__?.cleanup();delete window.__APALAS_LIVE_PREVIEW__;}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {describe,expect,it} from 'vitest';
-import {buildPreviewDocument,parsePreviewAnswer} from '../../components/mission/dashboard-preview';
+import {discardDashboardPreview,parsePreviewAnswer,startDashboardPreview} from '../../components/mission/dashboard-preview';
 
 describe('dashboard preview answers',()=>{
  it('separates the visual preview script from the family-facing reply',()=>{
@@ -14,22 +14,17 @@ describe('dashboard preview answers',()=>{
  });
 });
 
-describe('isolated dashboard preview',()=>{
- it('builds a network-isolated visual clone without live scripts while preserving the open widget',()=>{
-  document.documentElement.innerHTML='<head><style>h1{color:red}</style><script>window.bad=true</script></head><body style="overflow:hidden" data-scroll-locked="1"><main><h1>Hoy</h1></main><button class="fc-launch">Chat</button><div role="dialog">Conversación</div></body>';
-  const html=buildPreviewDocument('document.querySelector("h1").textContent="Mañana";');
-  expect(html).toContain("default-src 'none'");
-  expect(html).toContain('document.querySelector("h1").textContent="Mañana";');
-  expect(html).toContain('h1{color:red}');
-  expect(html).not.toContain('window.bad=true');
-  expect(html).toContain('Conversación');
-  expect(html).not.toContain('fc-launch');
-  expect(html).not.toContain('data-scroll-locked');
+describe('live dashboard preview',()=>{
+ it('changes the live page and restores it only when discarded',()=>{
+  document.body.innerHTML='<button class="fc-send" style="background:blue">Enviar</button>';
+  startDashboardPreview('preview-1','document.querySelector(".fc-send").style.background="yellow";');
+  expect((document.querySelector('.fc-send') as HTMLElement).style.background).toBe('yellow');
+  discardDashboardPreview();
+  expect((document.querySelector('.fc-send') as HTMLElement).style.background).toBe('blue');
  });
 
- it('neutralizes a closing script tag inside generated preview code',()=>{
-  const html=buildPreviewDocument('document.body.dataset.example="</script>";');
-  expect(html).not.toContain('dataset.example="</script>"');
-  expect(html).toContain('<\\/script>');
+ it('rejects preview code with network or storage access',()=>{
+  expect(()=>startDashboardPreview('preview-2','fetch("/api/family/records")')).toThrow('Vista previa no segura');
+  expect(()=>startDashboardPreview('preview-3','localStorage.clear()')).toThrow('Vista previa no segura');
  });
 });

@@ -68,8 +68,12 @@ def clean_answer(value,default='He terminado.'):
 
 
 def process_messages(messages,api_call,send_update,file_loader):
- by_person={person:sorted((m for m in messages if m.get('person')==person),key=lambda item:item.get('created',0)) for person in ('Dani','Cris')}
- for person,items in by_person.items():
+ groups={}
+ for message in messages:
+  person=message.get('person');conversation=message.get('conversationId') or ('legacy-'+str(person).lower())
+  if person in ('Dani','Cris'):groups.setdefault((person,conversation),[]).append(message)
+ for (person,conversation),items in groups.items():
+  items=sorted(items,key=lambda item:item.get('created',0))
   active=None
   for message in [item for item in items if item.get('status')=='pending']:
    try:state=api_call('runs/'+message['run'])
@@ -95,7 +99,8 @@ def process_messages(messages,api_call,send_update,file_loader):
   if not candidates:continue
   message=candidates[0]
   prompt=compose_input(message.get('text',''),file_loader(message))
-  result=api_call('runs',{'input':prompt,'session_id':'apalas-dashboard-'+person.lower(),'instructions':INSTRUCTIONS.format(person=person)},'apalas-'+person+'-'+message['id'])
+  session_id='apalas-dashboard-'+person.lower() if conversation=='legacy-'+person.lower() else 'apalas-dashboard-'+person.lower()+'-'+conversation
+  result=api_call('runs',{'input':prompt,'session_id':session_id,'instructions':INSTRUCTIONS.format(person=person)},'apalas-'+person+'-'+message['id'])
   run=result.get('run_id') or result.get('id')
   if not run:raise RuntimeError('Hermes did not return a run id')
   send_update({'id':message['id'],'status':'pending','run':run})

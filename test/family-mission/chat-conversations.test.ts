@@ -1,0 +1,14 @@
+import {it,expect,vi,beforeEach} from 'vitest';
+import {NextRequest} from 'next/server';
+vi.mock('../../lib/cloudflare-family-access',()=>({verifiedFamilyEmail:vi.fn()}));
+vi.mock('../../lib/family-mission/chat-store',()=>({listConversations:vi.fn(),createConversation:vi.fn(),listChat:vi.fn()}));
+vi.mock('../../lib/family-mission/legacy-chat',()=>({legacyChat:vi.fn()}));
+import {verifiedFamilyEmail} from '../../lib/cloudflare-family-access';
+import {listConversations,createConversation,listChat} from '../../lib/family-mission/chat-store';
+import {legacyChat} from '../../lib/family-mission/legacy-chat';
+import {GET,POST} from '../../app/api/family/chat/conversations/route';
+const email=vi.mocked(verifiedFamilyEmail),list=vi.mocked(listConversations),chat=vi.mocked(listChat),create=vi.mocked(createConversation),legacy=vi.mocked(legacyChat);
+beforeEach(()=>{email.mockResolvedValue('apavicio@gmail.com');list.mockResolvedValue([]);chat.mockResolvedValue([]);create.mockResolvedValue({id:'c1',person:'Dani',title:'Nueva conversación',createdAt:'x',updatedAt:'x'} as any);legacy.mockResolvedValue([]);});
+it('searches conversations for the verified parent',async()=>{await GET(new NextRequest('https://apalas.apaniel.dev/api/family/chat/conversations?q=pañales'));expect(list).toHaveBeenCalledWith('Dani','pañales');});
+it('creates a titled conversation for the verified parent',async()=>{const r=await POST(new NextRequest('https://apalas.apaniel.dev/api/family/chat/conversations',{method:'POST',headers:{origin:'https://apalas.apaniel.dev','content-type':'application/json'},body:JSON.stringify({title:'Compras recurrentes'})}));expect(r.status).toBe(201);expect(create).toHaveBeenCalledWith('Dani','Compras recurrentes');});
+it('includes legacy history as one resumable conversation',async()=>{legacy.mockResolvedValue([{id:'old',text:'mensaje antiguo',created:1}] as any);const r=await GET(new NextRequest('https://apalas.apaniel.dev/api/family/chat/conversations'));expect((await r.json()).conversations[0]).toMatchObject({id:'legacy-dani',title:'Conversación anterior'});});

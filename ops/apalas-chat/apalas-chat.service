@@ -1,0 +1,17 @@
+[Unit]
+Description=Apalas Familia chat bridge
+After=network.target
+[Service]
+User=hermes
+Group=hermes
+EnvironmentFile=/etc/apalas-chat.env
+ExecStart=/home/hermes/.hermes/hermes-agent/venv/bin/python /opt/apalas-chat/bridge.py
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/apalas-chat
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target

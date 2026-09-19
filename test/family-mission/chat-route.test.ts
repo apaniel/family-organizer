@@ -1,0 +1,11 @@
+import {it,expect,vi,beforeEach} from 'vitest';
+import {NextRequest} from 'next/server';
+vi.mock('../../lib/cloudflare-family-access',()=>({verifiedFamilyEmail:vi.fn()}));
+import {verifiedFamilyEmail} from '../../lib/cloudflare-family-access';
+import {GET,POST} from '../../app/api/family/chat/route';
+const mock=vi.mocked(verifiedFamilyEmail);
+beforeEach(()=>{mock.mockResolvedValue('apavicio@gmail.com');process.env.APALAS_CHAT_SECRET='test-server-secret';vi.stubGlobal('fetch',vi.fn(async()=>Response.json({person:'Dani',messages:[]})));});
+it('does not accept sync credentials as a user',async()=>{mock.mockResolvedValue(null);expect((await GET(new NextRequest('https://apalas.apaniel.dev/api/family/chat',{headers:{'x-calendar-sync-secret':'secret'}}))).status).toBe(401);expect(fetch).not.toHaveBeenCalled();});
+it('rejects cross-origin posts',async()=>{expect((await POST(new NextRequest('https://apalas.apaniel.dev/api/family/chat',{method:'POST',headers:{origin:'https://evil.example'},body:'{}'}))).status).toBe(403);expect(fetch).not.toHaveBeenCalled();});
+it('assigns identity server-side and discards client profile/session',async()=>{const r=await POST(new NextRequest('https://apalas.apaniel.dev/api/family/chat',{method:'POST',headers:{origin:'https://apalas.apaniel.dev'},body:JSON.stringify({id:'12345678-1234-1234-1234-123456789abc',text:'Hola',person:'Cris',profile:'default',session_id:'other'})}));expect(r.status).toBe(200);const opts=vi.mocked(fetch).mock.calls[0][1]!;expect(opts.headers).toMatchObject({'X-Apalas-Person':'Dani'});expect(JSON.parse(opts.body as string)).toEqual({id:'12345678-1234-1234-1234-123456789abc',text:'Hola'});});
+it('maps both Cris emails to Cris',async()=>{for(const email of ['crislacorte@hotmail.com','lacorte.cristina@gmail.com']){mock.mockResolvedValue(email);await GET(new NextRequest('https://apalas.apaniel.dev/api/family/chat'));expect(vi.mocked(fetch).mock.lastCall![1]!.headers).toMatchObject({'X-Apalas-Person':'Cris'});}});

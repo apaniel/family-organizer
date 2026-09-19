@@ -17,7 +17,7 @@ async function handle(req:NextRequest,post=false){
    if(typeof data.text!=='string'||!data.text.trim()||data.text.length>4000||typeof data.id!=='string'||!/^[a-f0-9-]{36}$/.test(data.id))return NextResponse.json({error:'Mensaje no válido'},{status:400});
    body=JSON.stringify({text:data.text,id:data.id});
   }
-  const response=await fetch('https://apalas-chat.apaniel.dev/chat',{method:post?'POST':'GET',headers:{Authorization:'Bearer '+secret,'X-Apalas-Person':person,'Content-Type':'application/json'},body,redirect:'error',signal:AbortSignal.timeout(25000),cache:'no-store'});
+  const response=await fetch('https://apalas-chat.apaniel.dev/chat',{method:post?'POST':'GET',headers:{Authorization:'Bearer '+secret,'X-Apalas-Person':person,'Content-Type':'application/json','User-Agent':'ApalasDashboard/1.0'},body,redirect:'manual',signal:AbortSignal.timeout(25000),cache:'no-store'});
   const result=await response.json();
   return NextResponse.json(result,{status:response.status,headers:{'Cache-Control':'private, no-store'}});
  }catch{return NextResponse.json({error:'Rufus no está disponible ahora. Inténtalo en un momento.'},{status:503});}

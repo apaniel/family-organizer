@@ -31,6 +31,7 @@ class Handler(BaseHTTPRequestHandler):
   out=json.dumps(data,ensure_ascii=False).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(out)));self.end_headers();self.wfile.write(out)
  def handle_request(self,post=False):
   if not secrets.compare_digest(self.headers.get('Authorization',''),'Bearer '+KEY):return self.reply(401,{'error':'Unauthorized'})
+  if self.path=='/health' and not post:return self.reply(200,{'ok':True})
   person=self.headers.get('X-Apalas-Person','')
   if self.path!='/chat' or person not in ('Dani','Cris'):return self.reply(404,{'error':'Not found'})
   try:

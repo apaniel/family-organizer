@@ -15,14 +15,14 @@ describe('dashboard preview answers',()=>{
 });
 
 describe('isolated dashboard preview',()=>{
- it('builds a network-isolated visual clone without live scripts or chat chrome',()=>{
+ it('builds a network-isolated visual clone without live scripts while preserving the open widget',()=>{
   document.documentElement.innerHTML='<head><style>h1{color:red}</style><script>window.bad=true</script></head><body style="overflow:hidden" data-scroll-locked="1"><main><h1>Hoy</h1></main><button class="fc-launch">Chat</button><div role="dialog">Conversación</div></body>';
   const html=buildPreviewDocument('document.querySelector("h1").textContent="Mañana";');
   expect(html).toContain("default-src 'none'");
   expect(html).toContain('document.querySelector("h1").textContent="Mañana";');
   expect(html).toContain('h1{color:red}');
   expect(html).not.toContain('window.bad=true');
-  expect(html).not.toContain('Conversación');
+  expect(html).toContain('Conversación');
   expect(html).not.toContain('fc-launch');
   expect(html).not.toContain('data-scroll-locked');
  });

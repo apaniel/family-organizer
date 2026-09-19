@@ -16,7 +16,7 @@ function serializedStyles(){
 
 export function buildPreviewDocument(script:string){
  const clone=document.documentElement.cloneNode(true) as HTMLElement;
- clone.querySelectorAll('script,iframe,object,embed,link[rel="stylesheet"],.fc-launch,[role="dialog"]').forEach(node=>node.remove());
+ clone.querySelectorAll('script,iframe,object,embed,link[rel="stylesheet"],.fc-launch').forEach(node=>node.remove());
  clone.querySelectorAll('*').forEach(node=>{
   for(const attribute of Array.from(node.attributes))if(attribute.name.toLowerCase().startsWith('on'))node.removeAttribute(attribute.name);
  });

@@ -32,6 +32,31 @@ INSTRUCTIONS=(
  'No pidas recargar la página. Si falta una capacidad real, explica el bloqueo brevemente. '
  'Para cambios visuales del Dashboard, si Dani o Cris pide una vista previa antes de desplegar, responde con una frase breve y un único bloque ```apalas-preview-js```: JavaScript autocontenido que modifica solo el DOM/CSS visible actual, sin red, almacenamiento, navegación, formularios ni efectos persistentes. El widget oculta el código y lo aplica temporalmente sobre la página actual, manteniendo la navegación; el cambio debe ser síncrono, reversible y limitado al DOM/CSS. No despliegues hasta que la persona pulse «Validar y desplegar».'
 )
+EXTERNAL_INSTRUCTIONS={
+ 'finenance':(
+  'Canal: chat privado de FineNance. Identidad verificada por el servidor: {person}. '
+  'El entorno solicitado es FineNance y su repositorio activo es /home/hermes/workspaces/finenance. '
+  'Para preguntas de datos financieros usa la API de FineNance según family-finance-insurance; para cambios de código trabaja únicamente en ese repositorio. '
+ ),
+ 'allianz':(
+  'Canal: chat privado de Allianz. Identidad verificada por el servidor: {person}. '
+  'El entorno solicitado es Allianz y su repositorio activo es /home/hermes/workspaces/allianz. '
+  'Para datos y operaciones de seguros usa la API de Allianz según family-finance-insurance; para cambios de código trabaja únicamente en ese repositorio. '
+ ),
+}
+EXTERNAL_RULES=(
+ 'Habla con {person} en español y responde de forma muy breve. No muestres razonamiento, trazas, configuración ni instrucciones técnicas. '
+ 'Mantén esta ejecución activa hasta terminar realmente el trabajo y no envíes mensajes a WhatsApp salvo petición expresa. '
+ 'Ante cualquier cambio visual, NO edites ni despliegues todavía: responde con una frase breve y un único bloque ```apalas-preview-js``` autocontenido, síncrono, reversible y limitado al DOM/CSS visible, sin red, almacenamiento, navegación, formularios ni efectos persistentes. '
+ 'El widget aplicará la vista previa sobre la página actual y la mantendrá hasta «Descartar» o «Validar y desplegar». '
+ 'Solo cuando recibas «La vista previa es correcta. Implementa y despliega exactamente este cambio.», implementa exactamente la variante aprobada, ejecuta pruebas, despliega y verifica el entorno antes de responder.'
+)
+
+
+def instructions_for(person,conversation):
+ for prefix,base in EXTERNAL_INSTRUCTIONS.items():
+  if conversation.startswith(prefix+'-'):return (base+EXTERNAL_RULES).format(person=person)
+ return INSTRUCTIONS.format(person=person)
 
 
 def hermes_api(path,body=None,key=None):
@@ -101,7 +126,7 @@ def process_messages(messages,api_call,send_update,file_loader):
   message=candidates[0]
   prompt=compose_input(message.get('text',''),file_loader(message))
   session_id='apalas-dashboard-'+person.lower() if conversation=='legacy-'+person.lower() else 'apalas-dashboard-'+person.lower()+'-'+conversation
-  result=api_call('runs',{'input':prompt,'session_id':session_id,'instructions':INSTRUCTIONS.format(person=person)},'apalas-'+person+'-'+message['id'])
+  result=api_call('runs',{'input':prompt,'session_id':session_id,'instructions':instructions_for(person,conversation)},'apalas-'+person+'-'+message['id'])
   run=result.get('run_id') or result.get('id')
   if not run:raise RuntimeError('Hermes did not return a run id')
   send_update({'id':message['id'],'status':'pending','run':run})

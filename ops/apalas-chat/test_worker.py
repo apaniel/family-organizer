@@ -38,5 +38,16 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(len([call for call in calls if call[0]=='runs']),2)
         self.assertEqual({call[1]['session_id'] for call in calls},{'apalas-dashboard-dani-c1','apalas-dashboard-dani-c2'})
 
+    def test_external_conversation_targets_its_own_environment(self):
+        calls=[]
+        messages=[{'id':'a','person':'Dani','conversationId':'finenance-c1','text':'Cambia el botón','status':'queued','files':[],'created':1},{'id':'b','person':'Dani','conversationId':'allianz-c2','text':'Cambia la cabecera','status':'queued','files':[],'created':2}]
+        process_messages(messages,lambda path,body=None,key=None:calls.append((path,body,key)) or {'run_id':'run_'+str(key)[-1]},lambda _:None,lambda _:[])
+        run_bodies=[call[1] for call in calls if call[0]=='runs']
+        self.assertIn('/home/hermes/workspaces/finenance',run_bodies[0]['instructions'])
+        self.assertIn('FineNance',run_bodies[0]['instructions'])
+        self.assertIn('/home/hermes/workspaces/allianz',run_bodies[1]['instructions'])
+        self.assertIn('Allianz',run_bodies[1]['instructions'])
+        self.assertIn('```apalas-preview-js```',run_bodies[0]['instructions'])
+
 
 if __name__=='__main__':unittest.main()

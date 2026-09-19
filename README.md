@@ -6,7 +6,7 @@ A small family planner: today/tomorrow tasks, calendar, and weekly adult/kids me
 - Cloudflare Access email login only, approved addresses apavicio@gmail.com and dapamar90@gmail.com.
 - Each protected page and data request verifies the signed Access identity. No PIN, device activation, profile selection, or InstantDB authentication.
 - Persistent shared records in D1 FAMILY_DB. Optimistic revisions, unique source keys and atomic audit records protect updates.
-- Google family calendar is read from the private losapalas feed. Hermes can read/create Google events using the separate VPS calendar broker. Local dashboard events are not automatically pushed to Google.
+- Google family calendar prefers the Google Calendar API so event labels, event colors and the calendar's default color are preserved. The private losapalas feed remains a read-only fallback. Hermes can read/create Google events using the separate VPS calendar broker. Local dashboard events are not automatically pushed to Google.
 - Hermes's service access is retained for background family planning.
 
 `npm run dev`, `npm test`, `npm run build:cloudflare`, `npm run deploy:cloudflare`.

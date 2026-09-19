@@ -2,8 +2,18 @@ export type Kind = 'task' | 'event' | 'meal';
 export type FamilyRecord = { id: string; kind: Kind; revision: number; title: string; date: string; endDate?: string;
  time?: string; endTime?: string; owner: string; status: 'open'|'done'|'waiting'; category: string; notes: string;
  checklist: {text:string;done:boolean}[]; audience: 'adults'|'kids'; slot:'lunch'|'dinner'; recurrence:'none'|'daily'|'weekdays'|'weekly'|'yearly';
- source: string; sourceKey?: string; confirmed: boolean; reminderDays: number; updatedAt?: string; readOnly?: boolean };
+ source: string; sourceKey?: string; confirmed: boolean; reminderDays: number; updatedAt?: string; readOnly?: boolean; color?: string; foregroundColor?: string; allDay?: boolean };
 export function dateKey(date = new Date()) { return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Madrid'}).format(date); }
+const safeCalendarColor=(value:unknown)=>typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value)?value.toLowerCase():undefined;
+export function calendarEventStyle(record:Pick<FamilyRecord,'color'|'foregroundColor'>) {
+ const background=safeCalendarColor(record.color);if(!background)return undefined;
+ const [r,g,b]=[background.slice(1,3),background.slice(3,5),background.slice(5,7)].map(x=>parseInt(x,16));const foreground=safeCalendarColor(record.foregroundColor)||((r*299+g*587+b*114)/1000>=150?'#1d1d1d':'#ffffff');
+ return {backgroundColor:background,borderColor:background,color:foreground};
+}
+export function calendarDayStyle(records:FamilyRecord[]) {
+ const vacation=records.find(record=>record.allDay&&(record.category==='holiday'||/vacaciones?/i.test(record.title)));const color=safeCalendarColor(vacation?.color);if(!color)return undefined;
+ const [r,g,b]=[color.slice(1,3),color.slice(3,5),color.slice(5,7)].map(value=>parseInt(value,16));return {backgroundColor:`rgba(${r}, ${g}, ${b}, 0.16)`,boxShadow:`inset 0 4px 0 ${color}`};
+}
 export function addDays(day: string, count: number) { const d = new Date(day+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+count); return d.toISOString().slice(0,10); }
 export function occursOn(r: FamilyRecord, day: string) {
  if (day < r.date) return false;

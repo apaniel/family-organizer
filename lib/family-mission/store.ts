@@ -3,7 +3,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { validateRecord, type FamilyRecord } from './model';
 async function database():Promise<any> { const {env}=await getCloudflareContext({async:true});const db=(env as any).FAMILY_DB;if(!db)throw new Error('Family storage unavailable');return db; }
 function unpack(row:any):FamilyRecord { return {...JSON.parse(row.data),id:row.id,revision:row.revision,updatedAt:row.updated_at}; }
-export async function readRecords() { const db=await database();const result=await db.prepare('SELECT * FROM family_records ORDER BY updated_at DESC LIMIT 3000').all();return result.results.map(unpack) as FamilyRecord[]; }
+export async function readRecords() { const db=await database();const result=await db.prepare("SELECT * FROM family_records WHERE source_key IS NULL OR (source_key NOT LIKE 'approval:%' AND source_key NOT LIKE 'capability:%') ORDER BY updated_at DESC LIMIT 3000").all();return result.results.map(unpack) as FamilyRecord[]; }
 export async function saveRecord(raw:any) {
  const data=validateRecord(raw);const db=await database();const now=new Date().toISOString();
  if(raw.id) {

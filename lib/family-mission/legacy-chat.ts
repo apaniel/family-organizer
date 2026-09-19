@@ -1,0 +1,4 @@
+import 'server-only';
+import type {ChatMessage} from './chat-store';
+export async function legacyChat(person:'Dani'|'Cris'):Promise<ChatMessage[]>{const secret=process.env.APALAS_CHAT_SECRET;if(!secret)return [];try{const response=await fetch('https://apalas-chat.apaniel.dev/chat',{headers:{Authorization:'Bearer '+secret,'X-Apalas-Person':person,'User-Agent':'ApalasDashboard/2.0'},redirect:'manual',signal:AbortSignal.timeout(10000),cache:'no-store'});if(!response.ok)return [];const data=await response.json() as {messages?:ChatMessage[]};return Array.isArray(data.messages)?data.messages:[];}catch{return [];}}
+export function mergeChat(legacy:ChatMessage[],current:ChatMessage[]){const messages=new Map<string,ChatMessage>();for(const message of legacy)messages.set(message.id,message);for(const message of current)messages.set(message.id,message);return Array.from(messages.values()).sort((a,b)=>a.created-b.created);}

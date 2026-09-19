@@ -85,3 +85,19 @@ describe('day status versus appointments',()=>{
   expect(isCalendarDayBlock(event)).toBe(false);
  });
 });
+
+describe('shared account birthday',()=>{
+ it('hides the account birthday but keeps real family birthdays',()=>{
+  const date={start:{date:'2026-11-22'},end:{date:'2026-11-23'}};
+  const events=expandGoogleApiEvents([
+   {...date,id:'self',summary:'¡Feliz cumpleaños!',eventType:'birthday',birthdayProperties:{type:'self'}},
+   {...date,id:'contact',summary:'Cumple de Emma',eventType:'birthday',birthdayProperties:{type:'contact'}},
+   {...date,id:'regular',summary:'¡Feliz cumpleaños!'}
+  ],'2026-11-01','2026-11-30');
+  expect(events.map(e=>e.title)).toEqual(['Cumple de Emma','¡Feliz cumpleaños!']);
+ });
+ it('also hides the known account birthday in the ICS fallback',()=>{
+  const events=expandGoogleCalendar(feed('BEGIN:VEVENT\r\nUID:f146nit8jcaohbdmns9fnad0v8@google.com\r\nDTSTART;VALUE=DATE:20261122\r\nDTEND;VALUE=DATE:20261123\r\nSUMMARY:¡Feliz cumpleaños!\r\nEND:VEVENT'),'2026-11-01','2026-11-30');
+  expect(events).toHaveLength(0);
+ });
+});

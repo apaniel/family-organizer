@@ -2,12 +2,14 @@ import 'server-only';
 import ICAL from 'ical.js';
 import {validateGoogleCalendarFeed} from './feed';
 import {dateKey,addDays,type FamilyRecord} from './model';
+// The shared account birthday is not a family occasion. ICS omits birthday metadata.
+const accountBirthdayUid='f146nit8jcaohbdmns9fnad0v8@google.com';
 export function expandGoogleCalendar(ics:string,from:string,to:string):FamilyRecord[]{
  const root=new ICAL.Component(ICAL.parse(ics));
  for(const zone of root.getAllSubcomponents('vtimezone')){const id=zone.getFirstPropertyValue('tzid');if(id)ICAL.TimezoneService.register(new ICAL.Timezone({component:zone,tzid:String(id)}));}
  const all=root.getAllSubcomponents('vevent').map(c=>new ICAL.Event(c));const result:FamilyRecord[]=[];
  const start=new Date(addDays(from,-1)+'T00:00:00Z');const end=new Date(addDays(to,2)+'T00:00:00Z');
- for(const event of all.filter(e=>!e.recurrenceId)){
+ for(const event of all.filter(e=>!e.recurrenceId&&e.uid!==accountBirthdayUid)){
   const overrides=all.filter(e=>e.uid===event.uid&&e.recurrenceId);for(const override of overrides)event.relateException(override);
   const add=(item:any,occStart:any,occEnd:any,key:string)=>{
    if(String(item.component.getFirstPropertyValue('status')).toUpperCase()==='CANCELLED')return;
@@ -39,6 +41,7 @@ export function expandGoogleApiEvents(items:any[],from:string,to:string,palette:
  const result:FamilyRecord[]=[];
  for(const item of items){
   if(item?.status==='cancelled'||!item?.start||!item?.end)continue;
+  if(item.eventType==='birthday'&&item.birthdayProperties?.type==='self'||item.iCalUID===accountBirthdayUid)continue;
   const allDay=typeof item.start.date==='string';const a=allDay?null:new Date(item.start.dateTime);const b=allDay?null:new Date(item.end.dateTime);
   if(!allDay&&(!a||!b||!Number.isFinite(a.getTime())||!Number.isFinite(b.getTime())))continue;
   const date=allDay?item.start.date:dateKey(a!);const last=allDay?addDays(item.end.date,-1):dateKey(new Date(Math.max(a!.getTime(),b!.getTime()-1)));

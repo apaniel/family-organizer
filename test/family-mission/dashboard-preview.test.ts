@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {describe,expect,it} from 'vitest';
-import {discardDashboardPreview,parsePreviewAnswer,startDashboardPreview} from '../../components/mission/dashboard-preview';
+import {activeDashboardPreview,discardDashboardPreview,parsePreviewAnswer,setDashboardPreviewMinimized,startDashboardPreview} from '../../components/mission/dashboard-preview';
 
 describe('dashboard preview answers',()=>{
  it('separates the visual preview script from the family-facing reply',()=>{
@@ -26,5 +26,13 @@ describe('live dashboard preview',()=>{
  it('rejects preview code with network or storage access',()=>{
   expect(()=>startDashboardPreview('preview-2','fetch("/api/family/records")')).toThrow('Vista previa no segura');
   expect(()=>startDashboardPreview('preview-3','localStorage.clear()')).toThrow('Vista previa no segura');
+ });
+
+ it('keeps the minimized banner state with the active preview',()=>{
+  document.body.innerHTML='<button class="fc-send">Enviar</button>';
+  startDashboardPreview('preview-4','document.querySelector(".fc-send").style.color="red";');
+  setDashboardPreviewMinimized(true);
+  expect(activeDashboardPreview()).toMatchObject({id:'preview-4',minimized:true});
+  discardDashboardPreview();
  });
 });

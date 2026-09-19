@@ -1,5 +1,5 @@
 export type PreviewAnswer={text:string;script:string|null};
-type LivePreview={id:string;script:string;cleanup:()=>void};
+type LivePreview={id:string;script:string;cleanup:()=>void;minimized:boolean};
 declare global{interface Window{__APALAS_LIVE_PREVIEW__?:LivePreview}}
 
 const previewBlock=/```apalas-preview-js\s*\n([\s\S]*?)```/g;
@@ -34,16 +34,18 @@ function execute(script:string){
 export function startDashboardPreview(id:string,script:string){
  if(typeof window==='undefined')return;
  window.__APALAS_LIVE_PREVIEW__?.cleanup();
- window.__APALAS_LIVE_PREVIEW__={id,script,cleanup:execute(script)};
+ window.__APALAS_LIVE_PREVIEW__={id,script,cleanup:execute(script),minimized:false};
 }
 
 export function reapplyDashboardPreview(){
  if(typeof window==='undefined'||!window.__APALAS_LIVE_PREVIEW__)return null;
- const {id,script,cleanup}=window.__APALAS_LIVE_PREVIEW__;cleanup();
- window.__APALAS_LIVE_PREVIEW__={id,script,cleanup:execute(script)};
- return {id,script};
+ const {id,script,cleanup,minimized}=window.__APALAS_LIVE_PREVIEW__;cleanup();
+ window.__APALAS_LIVE_PREVIEW__={id,script,cleanup:execute(script),minimized};
+ return {id,script,minimized};
 }
 
-export function activeDashboardPreview(){if(typeof window==='undefined')return null;const value=window.__APALAS_LIVE_PREVIEW__;return value?{id:value.id,script:value.script}:null;}
+export function activeDashboardPreview(){if(typeof window==='undefined')return null;const value=window.__APALAS_LIVE_PREVIEW__;return value?{id:value.id,script:value.script,minimized:value.minimized}:null;}
+
+export function setDashboardPreviewMinimized(minimized:boolean){if(typeof window==='undefined'||!window.__APALAS_LIVE_PREVIEW__)return;window.__APALAS_LIVE_PREVIEW__.minimized=minimized;}
 
 export function discardDashboardPreview(){if(typeof window==='undefined')return;window.__APALAS_LIVE_PREVIEW__?.cleanup();delete window.__APALAS_LIVE_PREVIEW__;}

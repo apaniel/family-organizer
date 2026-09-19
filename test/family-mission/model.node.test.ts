@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 vi.mock('server-only',()=>({}));
-import {validateRecord,occursOn,reminderCandidates,addDays,dateKey,calendarEventStyle,calendarDayStyle,isCalendarDayBlock,calendarTimeLabel,type FamilyRecord} from '@/lib/family-mission/model';
+import {validateRecord,occursOn,reminderCandidates,addDays,dateKey,calendarEventStyle,calendarDayStyle,isCalendarDayBlock,calendarTimeLabel,taskAgeLabel,type FamilyRecord} from '@/lib/family-mission/model';
 import {expandGoogleApiEvents,expandGoogleCalendar,googleEvents} from '@/lib/family-mission/google';
 const task=(patch:any={}):FamilyRecord=>({...validateRecord({kind:'task',title:'Mochila',date:'2026-09-16',...patch}),id:'one',revision:1});
 const feed=(events:string)=>`BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${events}\r\nEND:VCALENDAR`;
@@ -11,6 +11,7 @@ describe('family records',()=>{
  it('reminds of birthdays ahead of the next year',()=>{expect(reminderCandidates([task({kind:'event',date:'2025-09-20',recurrence:'yearly',reminderDays:7})],'2026-09-16')).toHaveLength(1);});
  it('suppresses proposals, completed items, and completed daily occurrences',()=>{const daily=task({recurrence:'daily'});const completion={...task({status:'done',sourceKey:'completion:one:2026-09-16'}),id:'two'};expect(reminderCandidates([daily,completion,task({confirmed:false}),task({status:'done'})],'2026-09-16')).toHaveLength(0);expect(reminderCandidates([daily,completion],'2026-09-17')).toHaveLength(1);});
  it('keeps overdue unfinished one-off tasks',()=>{expect(reminderCandidates([task()],'2026-09-20')).toHaveLength(1);});
+ it('shows how long an unfinished task has rolled over',()=>{expect(taskAgeLabel('2026-09-19','2026-09-19')).toBe('');expect(taskAgeLabel('2026-09-18','2026-09-19')).toBe('Desde ayer');expect(taskAgeLabel('2026-09-15','2026-09-19')).toBe('Desde hace 4 días');});
  it('only exposes safe Google colors as inline styles',()=>{expect(calendarEventStyle({...task(),color:'#D50000',foregroundColor:'#FFFFFF'})).toEqual({backgroundColor:'#d50000',borderColor:'#d50000',color:'#ffffff'});expect(calendarEventStyle({...task(),color:'url(javascript:bad)'})).toBeUndefined();});
  it('shades the whole day for all-day vacations using their event color',()=>{const vacation={...task(),kind:'event' as const,title:'Vacaciones de Navidad',category:'holiday',allDay:true,color:'#D50000'};expect(calendarDayStyle([vacation])).toEqual({backgroundColor:'rgba(213, 0, 0, 0.16)',boxShadow:'inset 0 4px 0 #d50000'});expect(calendarDayStyle([{...vacation,allDay:false}])).toBeUndefined();});
 });

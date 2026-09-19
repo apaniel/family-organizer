@@ -14,6 +14,22 @@ describe('family records',()=>{
  it('only exposes safe Google colors as inline styles',()=>{expect(calendarEventStyle({...task(),color:'#D50000',foregroundColor:'#FFFFFF'})).toEqual({backgroundColor:'#d50000',borderColor:'#d50000',color:'#ffffff'});expect(calendarEventStyle({...task(),color:'url(javascript:bad)'})).toBeUndefined();});
  it('shades the whole day for all-day vacations using their event color',()=>{const vacation={...task(),kind:'event' as const,title:'Vacaciones de Navidad',category:'holiday',allDay:true,color:'#D50000'};expect(calendarDayStyle([vacation])).toEqual({backgroundColor:'rgba(213, 0, 0, 0.16)',boxShadow:'inset 0 4px 0 #d50000'});expect(calendarDayStyle([{...vacation,allDay:false}])).toBeUndefined();});
 });
+describe('school days off',()=>{
+ it('shades libre disposición as a full day but does not shade a timed event',()=>{
+  const day={...task(),kind:'event' as const,title:'🔴 Colegio · Libre disposición',category:'family',allDay:true,color:'#d50000'};
+  expect(calendarDayStyle([day])?.backgroundColor).toBe('rgba(213, 0, 0, 0.16)');
+  expect(calendarDayStyle([{...day,allDay:false}])).toBeUndefined();
+ });
+ it('includes every vacation day and excludes the exclusive Google end date',()=>{
+  const events=expandGoogleApiEvents([{id:'break',summary:'Vacaciones de Navidad',start:{date:'2026-12-22'},end:{date:'2027-01-08'},colorId:'11'}],'2026-12-01','2027-01-31',{event:{'11':{background:'#d50000'}}});
+  for(const day of ['2026-12-22','2026-12-31','2027-01-07'])expect(calendarDayStyle(events.filter(e=>occursOn(e,day)))).toBeDefined();
+  expect(calendarDayStyle(events.filter(e=>occursOn(e,'2027-01-08')))).toBeUndefined();
+ });
+ it('categorizes Google libre disposición as a holiday without changing its all-day range',()=>{
+  const [day]=expandGoogleApiEvents([{id:'free',summary:'Colegio · Libre disposición',start:{date:'2026-11-02'},end:{date:'2026-11-03'}}],'2026-11-01','2026-11-30');
+  expect(day).toMatchObject({category:'holiday',allDay:true,date:'2026-11-02',endDate:'2026-11-02',time:''});
+ });
+});
 describe('Google calendar expansion',()=>{
  it('treats all-day end as exclusive',()=>{const events=expandGoogleCalendar(feed('BEGIN:VEVENT\r\nUID:holiday\r\nDTSTART;VALUE=DATE:20260916\r\nDTEND;VALUE=DATE:20260918\r\nSUMMARY:Vacaciones\r\nEND:VEVENT'),'2026-09-01','2026-09-30');expect(events[0].date).toBe('2026-09-16');expect(events[0].endDate).toBe('2026-09-17');});
  it('includes a Madrid event just after local midnight',()=>{const events=expandGoogleCalendar(feed('BEGIN:VEVENT\r\nUID:early\r\nDTSTART:20260915T223000Z\r\nDTEND:20260915T230000Z\r\nSUMMARY:Plan\r\nEND:VEVENT'),'2026-09-16','2026-09-16');expect(events).toHaveLength(1);expect(events[0].time).toBe('00:30');});

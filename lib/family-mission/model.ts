@@ -11,7 +11,7 @@ export function calendarEventStyle(record:Pick<FamilyRecord,'color'|'foregroundC
  return {backgroundColor:background,borderColor:background,color:foreground};
 }
 export function calendarDayStyle(records:FamilyRecord[]) {
- const vacation=records.find(record=>record.allDay&&(record.category==='holiday'||/vacaciones?|libre\s+disposici[oó]n/i.test(record.title)));const color=safeCalendarColor(vacation?.color);if(!color)return undefined;
+ const event=records.find(record=>record.allDay&&safeCalendarColor(record.color));const color=safeCalendarColor(event?.color);if(!color)return undefined;
  const [r,g,b]=[color.slice(1,3),color.slice(3,5),color.slice(5,7)].map(value=>parseInt(value,16));return {backgroundColor:`rgba(${r}, ${g}, ${b}, 0.16)`,boxShadow:`inset 0 4px 0 ${color}`};
 }
 export function addDays(day: string, count: number) { const d = new Date(day+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+count); return d.toISOString().slice(0,10); }

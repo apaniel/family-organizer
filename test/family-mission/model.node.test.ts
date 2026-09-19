@@ -58,3 +58,13 @@ describe('Google calendar expansion',()=>{
   finally{delete process.env.GOOGLE_CALENDAR_CLIENT_ID;delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;delete process.env.GOOGLE_CALENDAR_REFRESH_TOKEN;vi.unstubAllGlobals();}
  });
 });
+
+describe('all-day calendar display',()=>{
+ it('shades every JAF day blue without classifying it as a holiday',()=>{
+  const events=expandGoogleApiEvents([{id:'jaf',summary:'JAF · Jornades',start:{date:'2026-09-28'},end:{date:'2026-10-03'},colorId:'9'}],'2026-09-01','2026-10-31',{event:{'9':{background:'#3f51b5'}}});
+  expect(events[0]).toMatchObject({allDay:true,time:'',category:'family'});
+  for(const day of ['2026-09-28','2026-09-29','2026-09-30','2026-10-01','2026-10-02'])expect(calendarDayStyle(events.filter(e=>occursOn(e,day)))?.backgroundColor).toBe('rgba(63, 81, 181, 0.16)');
+  expect(calendarDayStyle(events.filter(e=>occursOn(e,'2026-10-03')))).toBeUndefined();
+  expect(calendarDayStyle([{...events[0],allDay:false,time:'09:00'}])).toBeUndefined();
+ });
+});

@@ -18,9 +18,10 @@ async function handle(req:NextRequest,post=false){
    body=JSON.stringify({text:data.text,id:data.id});
   }
   const response=await fetch('https://apalas-chat.apaniel.dev/chat',{method:post?'POST':'GET',headers:{Authorization:'Bearer '+secret,'X-Apalas-Person':person,'Content-Type':'application/json','User-Agent':'ApalasDashboard/1.0'},body,redirect:'manual',signal:AbortSignal.timeout(25000),cache:'no-store'});
+  if(!response.ok)console.error('apalas-chat-upstream',response.status,response.headers.get('content-type'));
   const result=await response.json();
   return NextResponse.json(result,{status:response.status,headers:{'Cache-Control':'private, no-store'}});
- }catch{return NextResponse.json({error:'Rufus no está disponible ahora. Inténtalo en un momento.'},{status:503});}
+ }catch(e){console.error('apalas-chat-error',e instanceof Error?e.name:'Error',e instanceof Error?e.message.replace(/Bearer [^ ]+/g,'Bearer [redacted]'):'unknown');return NextResponse.json({error:'Rufus no está disponible ahora. Inténtalo en un momento.'},{status:503});}
 }
 export async function GET(req:NextRequest){return handle(req);}
 export async function POST(req:NextRequest){return handle(req,true);}

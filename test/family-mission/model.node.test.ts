@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 vi.mock('server-only',()=>({}));
-import {validateRecord,occursOn,reminderCandidates,addDays,dateKey,calendarEventStyle,calendarDayStyle,type FamilyRecord} from '@/lib/family-mission/model';
+import {validateRecord,occursOn,reminderCandidates,addDays,dateKey,calendarEventStyle,calendarDayStyle,isCalendarDayBlock,calendarTimeLabel,type FamilyRecord} from '@/lib/family-mission/model';
 import {expandGoogleApiEvents,expandGoogleCalendar,googleEvents} from '@/lib/family-mission/google';
 const task=(patch:any={}):FamilyRecord=>({...validateRecord({kind:'task',title:'Mochila',date:'2026-09-16',...patch}),id:'one',revision:1});
 const feed=(events:string)=>`BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${events}\r\nEND:VCALENDAR`;
@@ -66,5 +66,22 @@ describe('all-day calendar display',()=>{
   for(const day of ['2026-09-28','2026-09-29','2026-09-30','2026-10-01','2026-10-02'])expect(calendarDayStyle(events.filter(e=>occursOn(e,day)))?.backgroundColor).toBe('rgba(63, 81, 181, 0.16)');
   expect(calendarDayStyle(events.filter(e=>occursOn(e,'2026-10-03')))).toBeUndefined();
   expect(calendarDayStyle([{...events[0],allDay:false,time:'09:00'}])).toBeUndefined();
+ });
+});
+
+describe('day status versus appointments',()=>{
+ it('uses backgrounds only for day status, keeping date-only outings as events',()=>{
+  const event={...task(),kind:'event' as const,allDay:true,color:'#3f51b5'};
+  for(const title of ['JAF · Jornades','Vacaciones de Navidad','Colegio · Libre disposición','Festivo · La Mercè'])expect(isCalendarDayBlock({...event,title})).toBe(true);
+  for(const title of ['Tibidabo con Laura y Chris','Paula: elección del nombre del ciclo y del grupo','¡Feliz cumpleaños!'])expect(calendarDayStyle([{...event,title}])).toBeUndefined();
+  expect(calendarTimeLabel({...event,title:'Tibidabo'})).toBe('Horario por confirmar');
+  expect(calendarTimeLabel({...event,title:'JAF'})).toBe('Todo el día');
+  expect(calendarTimeLabel({...event,title:'¡Feliz cumpleaños!'})).toBe('Todo el día');
+ });
+ it('keeps both Google appointment times in Madrid',()=>{
+  const [event]=expandGoogleApiEvents([{id:'appointment',summary:'Pediatra',start:{dateTime:'2026-09-22T18:45:00+02:00'},end:{dateTime:'2026-09-22T19:45:00+02:00'}}],'2026-09-01','2026-09-30');
+  expect(event).toMatchObject({allDay:false,time:'18:45',endTime:'19:45'});
+  expect(calendarTimeLabel(event)).toBe('18:45–19:45');
+  expect(isCalendarDayBlock(event)).toBe(false);
  });
 });

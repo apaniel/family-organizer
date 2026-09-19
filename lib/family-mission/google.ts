@@ -17,6 +17,7 @@ export function expandGoogleCalendar(ics:string,from:string,to:string):FamilyRec
    if(date>to || last<from)return;
    result.push({id:'google:'+event.uid+':'+key,revision:0,kind:'event',title:item.summary||'Sin título',date,endDate:last<date?date:last,
     time:allDay?'':new Intl.DateTimeFormat('es-ES',{timeZone:'Europe/Madrid',hour:'2-digit',minute:'2-digit',hour12:false}).format(a),
+    endTime:allDay?'':new Intl.DateTimeFormat('es-ES',{timeZone:'Europe/Madrid',hour:'2-digit',minute:'2-digit',hour12:false}).format(b!),
     owner:'Familia',status:'open',category:/vacaciones?|libre\s+disposici[oó]n/i.test(item.summary||'')?'holiday':'family',notes:item.description||'',checklist:[],audience:'adults',slot:'dinner',recurrence:'none',source:'Google Calendar · losapalas@gmail.com',confirmed:true,reminderDays:1,readOnly:true,allDay});
   };
   if(!event.isRecurring()){add(event,event.startDate,event.endDate,'single');continue;}
@@ -47,7 +48,8 @@ export function expandGoogleApiEvents(items:any[],from:string,to:string,palette:
   const foreground=labelBackground?readableForeground(labelBackground):safeColor(legacy?.foreground)||defaultForeground||(color?readableForeground(color):undefined);
   result.push({id:`google:${item.id}:${item.originalStartTime?.dateTime||item.originalStartTime?.date||item.start.dateTime||item.start.date}`,revision:0,kind:'event',title:item.summary||'Sin título',date,endDate:last<date?date:last,
    time:allDay?'':new Intl.DateTimeFormat('es-ES',{timeZone:'Europe/Madrid',hour:'2-digit',minute:'2-digit',hour12:false}).format(a!),
-   owner:'Familia',status:'open',category:/vacaciones?|libre\s+disposici[oó]n/i.test(item.summary||'')?'holiday':'family',notes:item.description||'',checklist:[],audience:'adults',slot:'dinner',recurrence:'none',source:'Google Calendar · losapalas@gmail.com',confirmed:true,reminderDays:1,readOnly:true,color,foregroundColor:foreground,allDay});
+   endTime:allDay?'':new Intl.DateTimeFormat('es-ES',{timeZone:'Europe/Madrid',hour:'2-digit',minute:'2-digit',hour12:false}).format(b!),
+    owner:'Familia',status:'open',category:/vacaciones?|libre\s+disposici[oó]n/i.test(item.summary||'')?'holiday':'family',notes:item.description||'',checklist:[],audience:'adults',slot:'dinner',recurrence:'none',source:'Google Calendar · losapalas@gmail.com',confirmed:true,reminderDays:1,readOnly:true,color,foregroundColor:foreground,allDay});
  }
  return result.sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
 }

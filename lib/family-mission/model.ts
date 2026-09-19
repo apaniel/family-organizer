@@ -10,8 +10,18 @@ export function calendarEventStyle(record:Pick<FamilyRecord,'color'|'foregroundC
  const [r,g,b]=[background.slice(1,3),background.slice(3,5),background.slice(5,7)].map(x=>parseInt(x,16));const foreground=safeCalendarColor(record.foregroundColor)||((r*299+g*587+b*114)/1000>=150?'#1d1d1d':'#ffffff');
  return {backgroundColor:background,borderColor:background,color:foreground};
 }
+// A date-only entry is not necessarily a day-status block (for example an outing).
+export function isCalendarDayBlock(record:FamilyRecord) {
+ return record.allDay===true && (record.category==='holiday'||/\bJAF\b|jornades d.aprenentatge a fora|vacaciones?|vacances|festivo|festiu|libre\s+disposici[oó]n|lliure\s+disposici[oó]|sin\s+cole(?:gio)?|no\s+lectiv[oa]/i.test(record.title));
+}
+export function calendarTimeLabel(record:FamilyRecord) {
+ if(isCalendarDayBlock(record))return 'Todo el día';
+ if(record.time)return record.endTime?`${record.time}–${record.endTime}`:record.time;
+ if(/cumplea[nñ]os|birthday|aniversari/i.test(record.title))return 'Todo el día';
+ return 'Horario por confirmar';
+}
 export function calendarDayStyle(records:FamilyRecord[]) {
- const event=records.find(record=>record.allDay&&safeCalendarColor(record.color));const color=safeCalendarColor(event?.color);if(!color)return undefined;
+ const event=records.find(record=>isCalendarDayBlock(record)&&safeCalendarColor(record.color));const color=safeCalendarColor(event?.color);if(!color)return undefined;
  const [r,g,b]=[color.slice(1,3),color.slice(3,5),color.slice(5,7)].map(value=>parseInt(value,16));return {backgroundColor:`rgba(${r}, ${g}, ${b}, 0.16)`,boxShadow:`inset 0 4px 0 ${color}`};
 }
 export function addDays(day: string, count: number) { const d = new Date(day+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+count); return d.toISOString().slice(0,10); }

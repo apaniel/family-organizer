@@ -21,8 +21,16 @@ export function calendarTimeLabel(record:FamilyRecord) {
  return 'Horario por confirmar';
 }
 export function calendarDayStyle(records:FamilyRecord[]) {
- const event=records.find(record=>isCalendarDayBlock(record)&&safeCalendarColor(record.color));const color=safeCalendarColor(event?.color);if(!color)return undefined;
- const [r,g,b]=[color.slice(1,3),color.slice(3,5),color.slice(5,7)].map(value=>parseInt(value,16));return {backgroundColor:`rgba(${r}, ${g}, ${b}, 0.16)`,boxShadow:`inset 0 4px 0 ${color}`};
+ const colors=records.filter(isCalendarDayBlock).map(record=>safeCalendarColor(record.color)||'#597bdc');
+ if(!colors.length)return undefined;
+ const tint=(color:string)=>{const [r,g,b]=[color.slice(1,3),color.slice(3,5),color.slice(5,7)].map(value=>parseInt(value,16));return `rgba(${r}, ${g}, ${b}, 0.16)`;};
+ if(colors.length===1)return {backgroundColor:tint(colors[0]),boxShadow:`inset 0 4px 0 ${colors[0]}`};
+ // Keep a band per event, including when two events share a color.
+ const stops=colors.flatMap((color,i)=>{
+  const start=i*100/colors.length,end=(i+1)*100/colors.length;
+  return [`${tint(color)} ${start}%`,`${tint(color)} ${i===colors.length-1?`${end}%`:`calc(${end}% - 1px)`}`,...(i===colors.length-1?[]:[`#fff calc(${end}% - 1px)`,`#fff ${end}%`])];
+ });
+ return {backgroundImage:`linear-gradient(to right, ${stops.join(', ')})`};
 }
 export function addDays(day: string, count: number) { const d = new Date(day+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+count); return d.toISOString().slice(0,10); }
 export function occursOn(r: FamilyRecord, day: string) {

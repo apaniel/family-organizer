@@ -101,3 +101,19 @@ describe('shared account birthday',()=>{
   expect(events).toHaveLength(0);
  });
 });
+
+describe('overlapping day blocks',()=>{
+ it('shows a band for each day block, excluding outings and timed events',()=>{
+  const jaf={...task(),kind:'event' as const,title:'JAF',allDay:true,color:'#3f51b5'};
+  const holiday={...jaf,title:'Festivo',color:'#d50000'};
+  const style=calendarDayStyle([jaf,holiday,{...jaf,title:'Tibidabo'},{...holiday,allDay:false,time:'10:00'}]);
+  expect(style?.backgroundImage).toContain('rgba(63, 81, 181, 0.16) 0%');
+  expect(style?.backgroundImage).toContain('rgba(213, 0, 0, 0.16) 50%');
+  expect(style?.backgroundImage).toContain('#fff 50%');
+ });
+ it('keeps identical-color overlaps separate and supports blocks without a color',()=>{
+  const holiday={...task(),kind:'event' as const,title:'Festivo',allDay:true,color:'#d50000'};
+  expect(calendarDayStyle([holiday,{...holiday,id:'two'}])?.backgroundImage).toContain('#fff 50%');
+  expect(calendarDayStyle([{...holiday,color:undefined}])?.backgroundColor).toBe('rgba(89, 123, 220, 0.16)');
+ });
+});

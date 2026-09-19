@@ -30,7 +30,8 @@ export function calendarDayStyle(records:FamilyRecord[]) {
   const start=i*100/colors.length,end=(i+1)*100/colors.length;
   return [`${tint(color)} ${start}%`,`${tint(color)} ${i===colors.length-1?`${end}%`:`calc(${end}% - 1px)`}`,...(i===colors.length-1?[]:[`#fff calc(${end}% - 1px)`,`#fff ${end}%`])];
  });
- return {backgroundImage:`linear-gradient(to right, ${stops.join(', ')})`};
+ const topStops=colors.flatMap((color,i)=>{const start=i*100/colors.length,end=(i+1)*100/colors.length;return [`${color} ${start}%`,`${color} ${i===colors.length-1?`${end}%`:`calc(${end}% - 1px)`}`,...(i===colors.length-1?[]:[`#fff calc(${end}% - 1px)`,`#fff ${end}%`])];});
+ return {backgroundImage:`linear-gradient(to right, ${topStops.join(', ')}), linear-gradient(to right, ${stops.join(', ')})`,backgroundSize:'100% 4px, 100% 100%',backgroundPosition:'top left, top left',backgroundRepeat:'no-repeat'};
 }
 export function addDays(day: string, count: number) { const d = new Date(day+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+count); return d.toISOString().slice(0,10); }
 export function occursOn(r: FamilyRecord, day: string) {

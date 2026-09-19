@@ -110,6 +110,10 @@ describe('overlapping day blocks',()=>{
   expect(style?.backgroundImage).toContain('rgba(63, 81, 181, 0.16) 0%');
   expect(style?.backgroundImage).toContain('rgba(213, 0, 0, 0.16) 50%');
   expect(style?.backgroundImage).toContain('#fff 50%');
+  expect(style?.backgroundImage).toContain('#3f51b5 0%');
+  expect(style?.backgroundImage).toContain('#d50000 50%');
+  expect(style?.backgroundSize).toBe('100% 4px, 100% 100%');
+  expect(style?.backgroundRepeat).toBe('no-repeat');
  });
  it('keeps identical-color overlaps separate and supports blocks without a color',()=>{
   const holiday={...task(),kind:'event' as const,title:'Festivo',allDay:true,color:'#d50000'};

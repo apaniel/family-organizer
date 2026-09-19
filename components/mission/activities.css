@@ -3,3 +3,5 @@
 .ap-expand{border:1px solid #dce3ed;padding:12px 18px;border-radius:10px;background:#fff;color:#3459a2;font-weight:600;font-size:14px;margin-top:16px}
 
 .ap-art.has-photo{position:relative;padding:0;height:180px;background:#e7ecf2;display:block}.ap-art.has-photo img{width:100%;height:100%;object-fit:cover;display:block}.ap-art.has-photo>strong{position:absolute;top:12px;right:12px;background:#fffef5;padding:6px 10px;border-radius:8px;color:#263249;box-shadow:0 2px 8px #0002}.ap-art.has-photo>small{position:absolute;bottom:8px;left:10px;background:#17243bd9;color:#fff;font-size:10px;border-radius:4px;padding:3px 6px}.ap-body .ap-photo-credit{font-size:11px;font-weight:400}
+
+.ap-time{display:inline-block;margin:8px 0 0;padding:5px 9px;border-radius:7px;font-size:12px;font-weight:650;background:#eef2f6;color:#415269}.ap-time-morning{background:#fff3cd;color:#785608}.ap-time-afternoon{background:#ffe8d8;color:#89471e}.ap-time-full_day{background:#eae5fa;color:#65428b}

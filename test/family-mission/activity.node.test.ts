@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {readActivityArtifact,sortedActivities} from '@/lib/family-mission/activity-model';
+import {readActivityArtifact,sortedActivities,activityTimeLabel} from '@/lib/family-mission/activity-model';
 const wrap=(plans:any[])=>'<script id="family-activity-data" type="application/json">'+JSON.stringify({version:1,checkedAt:'2026-09-19',plans})+'</script>';
 const p=(id:string,patch:any={})=>({id,title:id,url:'https://example.org/activity',...patch});
 describe('activity proposals',()=>{
@@ -14,4 +14,9 @@ describe('activity proposals',()=>{
 it('allows embedded raster photos but not remote or executable image payloads',()=>{
  const data=readActivityArtifact(wrap([p('jpg',{photo:'data:image/jpeg;base64,/9j/AA=='}),p('remote',{photo:'https://tracker.example/photo.jpg'}),p('svg',{photo:'data:image/svg+xml;base64,AAAA'})]));
  expect(data!.plans[0].photo).toBeDefined();expect(data!.plans[1].photo).toBeUndefined();expect(data!.plans[2].photo).toBeUndefined();
+});
+
+it('uses explicit activity time labels and leaves unknown schedules unconfirmed',()=>{
+ const d=readActivityArtifact(wrap([p('am',{timeOfDay:'morning'}),p('pm',{timeOfDay:'afternoon'}),p('day',{timeOfDay:'full_day'}),p('flex',{timeOfDay:'flexible'}),p('unknown')]));
+ expect(d!.plans.map(activityTimeLabel)).toEqual(['☀️ Mañana','🌤️ Tarde','🌅 Día completo','🕒 Horario flexible','🕒 Horario por confirmar']);
 });

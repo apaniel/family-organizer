@@ -4,6 +4,8 @@ import json
 import os
 import re
 import time
+import threading
+from websockets.sync.client import connect
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -135,16 +137,43 @@ def process_messages(messages,api_call,send_update,file_loader):
 
 def main():
  if not API_KEY or not all(SERVICE_HEADERS.values()):raise RuntimeError('Apalas worker credentials are not configured')
+ wake=threading.Event()
+ def notifications():
+  delay=2
+  while True:
+   try:
+    with connect(BASE.replace('https://','wss://')+'/socket?worker=1',additional_headers=SERVICE_HEADERS,open_timeout=30) as socket:
+     delay=2
+     wake.set()  # Reconcile anything submitted during a disconnect.
+     for message in socket:
+      if message=='changed':wake.set()
+   except Exception as error:
+    print('apalas-chat-socket:',type(error).__name__,flush=True)
+   time.sleep(delay)
+   delay=min(60,delay*2)
+ threading.Thread(target=notifications,daemon=True).start()
+ messages=[]
+ next_sync=0
  schedule=PollSchedule()
+ def send_update(payload):
+  update(payload)
+  for message in messages:
+   if message['id']==payload['id']:message.update(payload)
  while True:
   try:
-   messages=dashboard().get('messages',[])
-   process_messages(messages,hermes_api,update,download_files)
-   delay=schedule.success(messages)
+   if wake.is_set() or time.monotonic()>=next_sync:
+    wake.clear()
+    messages=dashboard().get('messages',[])
+    next_sync=time.monotonic()+300
+   process_messages(messages,hermes_api,send_update,download_files)
+   messages=[m for m in messages if m.get('status') in ('queued','pending','steer_pending')]
+   schedule.success(messages)
+   # Active run checks use the loopback Hermes API, not Cloudflare.
+   wake.wait(2 if messages else max(1,next_sync-time.monotonic()))
   except Exception as error:
    print('apalas-chat-worker:',type(error).__name__,flush=True)
-   delay=schedule.failure()
-  time.sleep(delay)
+   time.sleep(max(300,schedule.failure()))
+   next_sync=0
 
 
 if __name__=='__main__':main()

@@ -10,7 +10,9 @@
   "workers_dev": false,
   "preview_urls": false,
   "keep_vars": true,
-  "version_metadata": {"binding":"WORKER_VERSION"},
+  "version_metadata": {
+    "binding": "WORKER_VERSION"
+  },
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
@@ -47,5 +49,21 @@
   ],
   "triggers": {
     "crons": []
-  }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CHAT_NOTIFICATIONS",
+        "class_name": "ChatNotifications"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "chat-notifications-v1",
+      "new_sqlite_classes": [
+        "ChatNotifications"
+      ]
+    }
+  ]
 }

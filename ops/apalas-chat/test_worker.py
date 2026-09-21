@@ -1,4 +1,6 @@
 import unittest
+from unittest.mock import patch
+import worker
 from worker import process_messages
 
 
@@ -48,6 +50,25 @@ class WorkerTests(unittest.TestCase):
         self.assertIn('/home/hermes/workspaces/allianz',run_bodies[1]['instructions'])
         self.assertIn('Allianz',run_bodies[1]['instructions'])
         self.assertIn('```apalas-preview-js```',run_bodies[0]['instructions'])
+
+
+class QueueReadTests(unittest.TestCase):
+    def test_active_runs_and_idle_waits_do_not_repeatedly_read_cloudflare(self):
+        class Stop(BaseException): pass
+        class Event:
+            def __init__(self): self.waits=0
+            def is_set(self): return False
+            def clear(self): pass
+            def wait(self,delay):
+                self.waits+=1
+                if self.waits==3: raise Stop()
+        for pending in (False,True):
+            with self.subTest(pending=pending):
+                messages=[{'id':'test','person':'Dani','conversationId':'test','status':'pending','run':'test'}] if pending else []
+                with patch.object(worker,'API_KEY','test'),patch.object(worker,'SERVICE_HEADERS',{'test':'test'}),patch.object(worker.threading,'Thread'),patch.object(worker.threading,'Event',return_value=Event()),patch.object(worker.time,'monotonic',return_value=0),patch.object(worker,'dashboard',return_value={'messages':messages}) as queue,patch.object(worker,'hermes_api',return_value={'status':'running'}) as local:
+                    with self.assertRaises(Stop): worker.main()
+                    self.assertEqual(queue.call_count,1)
+                    self.assertEqual(local.call_count,3 if pending else 0)
 
 
 if __name__=='__main__':unittest.main()

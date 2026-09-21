@@ -10,6 +10,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 from bridge_core import compose_input
+from polling import PollSchedule
 
 HOME=Path('/home/hermes/.hermes/profiles/familia')
 CACHE=HOME/'cache'/'apalas-chat'/'uploads'
@@ -134,10 +135,16 @@ def process_messages(messages,api_call,send_update,file_loader):
 
 def main():
  if not API_KEY or not all(SERVICE_HEADERS.values()):raise RuntimeError('Apalas worker credentials are not configured')
+ schedule=PollSchedule()
  while True:
-  try:process_messages(dashboard().get('messages',[]),hermes_api,update,download_files)
-  except Exception as error:print('apalas-chat-worker:',type(error).__name__,flush=True)
-  time.sleep(1)
+  try:
+   messages=dashboard().get('messages',[])
+   process_messages(messages,hermes_api,update,download_files)
+   delay=schedule.success(messages)
+  except Exception as error:
+   print('apalas-chat-worker:',type(error).__name__,flush=True)
+   delay=schedule.failure()
+  time.sleep(delay)
 
 
 if __name__=='__main__':main()

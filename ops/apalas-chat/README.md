@@ -15,12 +15,24 @@ The current durable chat consumer is `worker.py`, run by the Hermes user's
 On the VPS the consumer runs from
 `/home/hermes/workspaces/family-calendar-days/ops/apalas-chat/`.
 
-Queue reads back off from 2 to 15 seconds when idle and return to 2 seconds while
-messages are active. A newly submitted message can therefore take up to 15 seconds
-to be picked up. Errors back off to 60 seconds; success resets the error delay.
-No messages are discarded, and failed agent actions are not automatically retried.
-This reduces an idle day's queue requests from about 86,400 to fewer than 6,000,
-without adding a paid service or changing D1 data.
+The consumer holds an authenticated WebSocket to `/api/family/chat/socket?worker=1`.
+Submissions wake it immediately. Active Hermes runs are checked through loopback;
+Cloudflare queue reads occur only on connection/reconnection, a submission event,
+or a five-minute recovery interval (288 idle reads/day). Errors wait five minutes.
+The Python environment requires `websockets>=15,<16`.
+
+Open browser chats subscribe to conversation-scoped invalidations using the same
+socket endpoint. Identity comes from the verified Access JWT or the existing
+trusted app service secret; no credentials or message content travel in events.
+Sockets use Durable Object hibernation. Browser tabs disconnect when hidden,
+reconcile on reconnect, and retain a five-minute recovery check. Expired sessions
+cannot receive further events. FineNance proxies upgrades through its private
+service binding.
+
+Deploy the website first (including the SQLite-backed ChatNotifications Durable
+Object migration), then the consumer and FineNance client. No D1 schema migration
+or stored-message deletion is required. If rolling back the consumer, restore the
+15-second-backoff version, never the original one-second polling loop.
 
 Run `python -m unittest discover -s ops/apalas-chat -p 'test_*.py'` in the Hermes
 Python environment. Deploy `worker.py` and `polling.py` together and restart only

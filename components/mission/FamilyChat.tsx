@@ -1,4 +1,5 @@
 'use client';
+import {chatNotifications} from '@/lib/chat-notifications';
 import {ChangeEvent,useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {usePathname} from 'next/navigation';
@@ -24,7 +25,7 @@ export default function FamilyChat(){
  async function createConversation(){try{const r=await fetch('/api/family/chat/conversations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:'Nueva conversación'})}),d=await r.json();if(!r.ok)throw new Error(d.error);setConversations(current=>[d.conversation,...current]);setConversationId(d.conversation.id);sessionStorage.setItem('apalas-chat-conversation',d.conversation.id);accept([]);setShowHistory(false);return d.conversation as Conversation;}catch(e){setError(e instanceof Error?e.message:'No se pudo crear la conversación.');return null;}}
  useEffect(()=>{if(open)void loadConversations('');},[open]);
  useEffect(()=>{if(!open||!showHistory)return;const timer=setTimeout(()=>void loadConversations(search),250);return()=>clearTimeout(timer);},[search,showHistory]);
- useEffect(()=>{if(!conversationId||(!open&&!pending))return;void load();const timer=setInterval(()=>{if(document.visibilityState==='visible')void load();},pending?2000:4000);return()=>clearInterval(timer);},[open,pending,conversationId]);
+ useEffect(()=>{if(!conversationId||(!open&&!pending))return;void load();return chatNotifications('/api/family/chat/socket?conversation='+encodeURIComponent(conversationId),()=>void load());},[open,pending,conversationId]);
  useEffect(()=>{if(!pending)return;setNow(Date.now());const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[pending]);
  useEffect(()=>{bottom.current?.scrollIntoView({behavior:'smooth'});},[messages.length,messages[messages.length-1]?.status,open]);
  useEffect(()=>{const active=activeDashboardPreview();if(!active)return;setPreview(active);const frame=requestAnimationFrame(()=>{const reapplied=reapplyDashboardPreview();if(reapplied)setPreview(reapplied);});return()=>cancelAnimationFrame(frame);},[pathname]);

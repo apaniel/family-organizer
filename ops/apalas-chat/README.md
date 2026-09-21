@@ -25,3 +25,8 @@ without adding a paid service or changing D1 data.
 Run `python -m unittest discover -s ops/apalas-chat -p 'test_*.py'` in the Hermes
 Python environment. Deploy `worker.py` and `polling.py` together and restart only
 `apalas-chat-worker.service`; retain the previous files for rollback.
+
+Production service files must match `main`. Review and merge a PR before
+deploying the chat consumer; do not deploy unmerged feature-branch files.
+The VPS consumer is separate from the Cloudflare website, so verify its running
+files against the merged commit as part of release verification.

@@ -171,7 +171,7 @@ def main():
    # Active run checks use the loopback Hermes API, not Cloudflare.
    wake.wait(2 if messages else max(1,next_sync-time.monotonic()))
   except Exception as error:
-   print('apalas-chat-worker:',type(error).__name__,flush=True)
+   print('apalas-chat-worker:',type(error).__name__, 'http_status='+str(getattr(error,'code','n/a')),flush=True)
    time.sleep(max(300,schedule.failure()))
    next_sync=0
 

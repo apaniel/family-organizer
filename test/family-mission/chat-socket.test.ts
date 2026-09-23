@@ -24,6 +24,14 @@ describe('chat sockets',()=>{
   expect(identity?.tag).toBe('Dani:thread-1');
   expect(identity!.expires).toBeLessThan(Date.now()+61000);
  });
+ it('restricts shared approval notifications to authenticated family browsers',async()=>{
+  const claims=Buffer.from(JSON.stringify({exp:Date.now()/1000+60})).toString('base64url');
+  const headers={'cf-access-jwt-assertion':'header.'+claims+'.signature',origin:'https://apalas.apaniel.dev'};
+  expect(await socketIdentity(req('scope=approvals'),env)).toBeNull();
+  expect(await socketIdentity(req('scope=approvals',headers),env)).toMatchObject({tag:'approvals'});
+  expect(await socketIdentity(req('scope=approvals',{...headers,origin:'https://evil.example'}),env)).toBeNull();
+  expect(await socketIdentity(req('scope=approvals&external=finenance&person=Dani&conversation=finenance-abc',{'x-calendar-sync-secret':'private'}),env)).toBeNull();
+ });
  it('notifies only the matching conversation, waking consumer only for submissions',async()=>{
   const socket=(tag:string,expires=Date.now()+10000)=>({deserializeAttachment:()=>({tag,expires}),send:vi.fn(),close:vi.fn()});
   const dani=socket('Dani:thread-1'),cris=socket('Cris:thread-1'),other=socket('Dani:thread-2'),worker=socket('worker'),expired=socket('Dani:thread-1',1);

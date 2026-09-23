@@ -1,5 +1,5 @@
 /** Subscribe while visible. Reconnect with backoff; reconcile after missed events. */
-export function chatNotifications(path: string, refresh: () => void) {
+export function chatNotifications(path: string, refresh: () => void, recoveryMs = 300000) {
  let socket: WebSocket | undefined;
  let timer: ReturnType<typeof setTimeout> | undefined;
  let stopped = false;
@@ -28,7 +28,7 @@ export function chatNotifications(path: string, refresh: () => void) {
  // Recovery for lost notifications and periodic reauthentication, not rapid polling.
  const recovery = setInterval(() => {
   if (document.visibilityState === 'visible') refresh();
- }, 300000);
+ }, recoveryMs);
  const reauthenticate = setInterval(visibility, 1800000);
  return () => {
   stopped = true; clearTimeout(timer); clearInterval(recovery); clearInterval(reauthenticate);

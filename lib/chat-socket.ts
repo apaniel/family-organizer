@@ -21,6 +21,8 @@ export async function socketIdentity(request: Request, env: any) {
   expires = Math.min(expires, claims.exp*1000);
   person = ['apavicio@gmail.com','dapamar90@gmail.com'].includes(email) ? 'Dani' : 'Cris';
  }
+ // Approval invalidations are shared only with authenticated family browsers.
+ if (url.searchParams.get('scope') === 'approvals') return source ? null : {tag:'approvals', expires};
  const conversation = url.searchParams.get('conversation') || '';
  if (!/^[a-zA-Z0-9-]{2,80}$/.test(conversation) || (source && !conversation.startsWith(source+'-'))) return null;
  return {tag:person+':'+conversation, expires};

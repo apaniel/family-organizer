@@ -11,6 +11,8 @@ A small family planner: today/tomorrow tasks, calendar, and weekly adult/kids me
 
 `npm run dev`, `npm test`, `npm run build:cloudflare`, `npm run deploy:cloudflare`.
 
+CI (`.github/workflows/ci.yml`) typechecks, tests and builds every pull request. Pushes to `main` deploy through `.github/workflows/deploy.yml`, which applies new D1 migrations first; it needs the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets.
+
 The previous organizer, mobile app, and PIN code were retired. Git history preserves their source. Existing new-planner records are unchanged.
 
 

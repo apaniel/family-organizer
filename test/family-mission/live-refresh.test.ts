@@ -3,3 +3,8 @@ import {changedChat} from '../../components/mission/dashboard-refresh';
 it('refreshes when a pending action completes',()=>{expect(changedChat([{id:'a',status:'pending'}],[{id:'a',status:'completed'}])).toBe(true);});
 it('refreshes partial changes after failed or cancelled runs',()=>{for(const status of ['failed','cancelled'])expect(changedChat([{id:'a',status:'pending'}],[{id:'a',status}])).toBe(true);});
 it('does not refresh repeatedly from old history or another message',()=>{expect(changedChat([],[{id:'a',status:'completed'}])).toBe(false);expect(changedChat([{id:'a',status:'completed'}],[{id:'a',status:'completed'}])).toBe(false);expect(changedChat([{id:'a',status:'pending'}],[{id:'b',status:'completed'}])).toBe(false);});
+import {vi,afterEach} from 'vitest';
+import {everyVisible,refreshOnReturn} from '../../components/mission/dashboard-refresh';
+afterEach(()=>{vi.useRealTimers();});
+it('does not reload hidden tabs on the minute timer',()=>{vi.useFakeTimers();let visible=false;const load=vi.fn();const stop=everyVisible(load,60000,()=>visible);vi.advanceTimersByTime(180000);expect(load).not.toHaveBeenCalled();visible=true;vi.advanceTimersByTime(60000);expect(load).toHaveBeenCalledTimes(1);stop();vi.advanceTimersByTime(60000);expect(load).toHaveBeenCalledTimes(1);});
+it('reloads once when focus and visibilitychange both report a tab switch',()=>{expect(refreshOnReturn(10000)).toBe(true);expect(refreshOnReturn(10050)).toBe(false);expect(refreshOnReturn(13000)).toBe(true);});

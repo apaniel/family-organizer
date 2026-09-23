@@ -1,0 +1,32 @@
+name: Retry D1 deployment after quota reset
+
+on:
+  schedule:
+    # 2026-09-24 00:12 UTC = 02:12 Europe/Madrid: after the daily D1 quota
+    # reset, and after FineNance's own retry at 00:07.
+    - cron: '12 0 24 9 *'
+  # Manual runs validate registration without starting a deployment.
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - name: Retry only on the intended date
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != "schedule" || "$(date -u +%F)" != "2026-09-24" ]]; then
+            echo "One-time retry scheduled for 2026-09-24 at 00:12 UTC. No deployment started."
+            exit 0
+          fi
+          gh workflow run deploy.yml --ref main
+          echo "Production deployment requested; it will apply pending D1 migrations before deploying."

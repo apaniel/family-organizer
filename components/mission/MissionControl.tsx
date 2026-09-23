@@ -12,7 +12,7 @@ import ActivityPlans from './ActivityPlans';
 import FamilyChat from './FamilyChat';
 import DashboardLive from './DashboardLive';
 import ApprovalTray from './ApprovalTray';
-import {DASHBOARD_REFRESH} from './dashboard-refresh';
+import {DASHBOARD_REFRESH,everyVisible} from './dashboard-refresh';
 const owners=['Dani','Cris','Saida','Familia','Sin asignar'];
 const categories:Record<string,string>={family:'En familia',school:'Colegio',birthday:'Cumpleaños',holiday:'Vacaciones y festivos',return:'Devolución',home:'Casa'};
 const dayLabel=(d:string,options:Intl.DateTimeFormatOptions={weekday:'long',day:'numeric',month:'long'})=>new Intl.DateTimeFormat('es-ES',{...options,timeZone:'Europe/Madrid'}).format(new Date(d+'T12:00:00Z'));
@@ -24,7 +24,7 @@ function Board({view}:{view:'today'|'calendar'|'week'}){
  const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [notice,setNotice]=useState('');const [editing,setEditing]=useState<FamilyRecord|null>(null);const [busy,setBusy]=useState(false);const [filter,setFilter]=useState('Todos');const [category,setCategory]=useState('all');const [confirmDelete,setConfirmDelete]=useState(false);
  const headers=()=>({'Content-Type':'application/json'});
  const load=useCallback(async()=>{setError('');try{const r=await fetch('/api/family/records',{headers:headers(),cache:'no-store'});const j=await r.json();if(!r.ok)throw new Error(j.error);setRecords(j.records);}catch(e){setError(e instanceof Error?e.message:'No se pudieron cargar los datos.');}finally{setLoading(false);}},[]);
- useEffect(()=>{const refresh=()=>{void load();setRevision(v=>v+1);};window.addEventListener(DASHBOARD_REFRESH,refresh);void load();const id=setInterval(()=>{setToday(dateKey());void load();},60000);return()=>{clearInterval(id);window.removeEventListener(DASHBOARD_REFRESH,refresh);};},[load]);
+ useEffect(()=>{const refresh=()=>{setToday(dateKey());void load();setRevision(v=>v+1);};window.addEventListener(DASHBOARD_REFRESH,refresh);void load();const stop=everyVisible(()=>{setToday(dateKey());void load();},60000);return()=>{stop();window.removeEventListener(DASHBOARD_REFRESH,refresh);};},[load]);
  useEffect(()=>{let active=true;const start=addDays(day.slice(0,7)+'-01',-7);fetch('/api/family/calendar?from='+start+'&to='+addDays(start,70),{headers:headers(),cache:'no-store'}).then(async r=>{if(!r.ok)throw new Error();return r.json();}).then(j=>{if(active)setGoogle(j.events);}).catch(()=>{if(active)setNotice('Google Calendar no se ha podido actualizar. Tus planes siguen guardados.');});return()=>{active=false;};},[day,revision]);
  async function save(value:FamilyRecord,close=true){setBusy(true);setError('');try{const r=await fetch('/api/family/records',{method:'POST',headers:headers(),body:JSON.stringify(value)});const j=await r.json();if(!r.ok)throw new Error(j.error);setRecords(current=>[j.record,...current.filter(x=>x.id!==j.record.id)]);if(close)setEditing(null);setNotice('Guardado.');return true;}catch(e){setError(e instanceof Error?e.message:'No se pudo guardar.');return false;}finally{setBusy(false);}}
  async function remove(){if(!editing)return;setBusy(true);try{const r=await fetch('/api/family/records',{method:'DELETE',headers:headers(),body:JSON.stringify({id:editing.id,revision:editing.revision})});if(!r.ok)throw new Error();setRecords(x=>x.filter(v=>v.id!==editing.id));setEditing(null);setConfirmDelete(false);setNotice('Eliminado.');}catch{setError('No se pudo eliminar. Actualiza la página.');}finally{setBusy(false);}}

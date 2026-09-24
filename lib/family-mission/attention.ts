@@ -1,7 +1,7 @@
 import {addDays,occursOn,isPastOpenOccurrence,type FamilyRecord} from './model';
 
 export type AttentionReason='overdue'|'waiting'|'unconfirmed'|'unassigned'|'incomplete';
-export const attentionLabels:Record<AttentionReason,string>={overdue:'Vencidas',waiting:'Esperando respuesta',unconfirmed:'Sin confirmar',unassigned:'Sin responsable',incomplete:'Cierres incompletos'};
+export const attentionLabels:Record<AttentionReason,string>={overdue:'Vencidas',waiting:'Esperando respuesta',unconfirmed:'Sin confirmar',unassigned:'Sin responsable',incomplete:'Tareas hechas con pasos pendientes'};
 export const isActive=(r:FamilyRecord)=>r.status!=='done'&&r.status!=='cancelled';
 const cancelledOccurrence=(r:FamilyRecord,records:FamilyRecord[],day:string)=>records.some(c=>c.sourceKey===`completion:${r.id}:${day}`&&c.status==='cancelled');
 const isOccurrence=(r:FamilyRecord)=>r.sourceKey?.startsWith('completion:');
@@ -38,17 +38,20 @@ export function attentionReport(records:FamilyRecord[],today:string){
   if(incompleteCompletion(r)){reasons.push('incomplete');health.incomplete++;}
   if(reasons.length){items.push({record:r,reasons});for(const reason of reasons)counts[reason]++;}
  }
+ const severity:AttentionReason[]=['incomplete','overdue','unconfirmed','waiting','unassigned'];
+ const rank=(reasons:AttentionReason[])=>Math.min(...reasons.map(reason=>severity.indexOf(reason)));
+ items.sort((a,b)=>rank(a.reasons)-rank(b.reasons)||a.record.date.localeCompare(b.record.date)||a.record.title.localeCompare(b.record.title,'es')||a.record.id.localeCompare(b.record.id));
  return {items,counts,health:{...health,overdue:counts.overdue,waiting:counts.waiting,unconfirmed:counts.unconfirmed}};
 }
 
-export type TriageAction={type:'reschedule';date:string}|{type:'wait'}|{type:'cancel'};
+export type TriageAction={type:'reschedule';date:string}|{type:'wait'}|{type:'reactivate'}|{type:'cancel'};
 export function triageTask(r:FamilyRecord,action:TriageAction):FamilyRecord{
  if(r.readOnly||r.kind!=='task'||r.recurrence!=='none')throw new Error('Esta acción requiere una tarea local sin repetición.');
  if(action.type==='reschedule'){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(action.date)||!Number.isFinite(Date.parse(action.date))||new Date(action.date+'T12:00:00Z').toISOString().slice(0,10)!==action.date)throw new Error('Indica una fecha válida.');
   return {...r,date:action.date,status:'open',completionDecision:undefined};
  }
- return {...r,status:action.type==='wait'?'waiting':'cancelled',completionDecision:undefined};
+ return {...r,status:action.type==='wait'?'waiting':action.type==='reactivate'?'open':'cancelled',completionDecision:undefined};
 }
 export const completionChoices=[
  {value:'all',label:'Completar toda la lista y cerrar'},
@@ -136,4 +139,32 @@ export function editorSaveAction(r:FamilyRecord,editingDay:string,records:Family
   return {type:'save',record:{...r,status:'done',completeOn:day,completeChoice:choice,completionDecision:choice==='partial'||(!choice&&r.completionDecision==='partial')?'partial':undefined}};
  }
  return completionAction(r,day,records,choice,snapshot);
+}
+
+const attentionReasonOrder:AttentionReason[]=['incomplete','overdue','waiting','unconfirmed','unassigned'];
+export function attentionReasonCopy(reasons:AttentionReason[]):string{
+ const copy:Record<AttentionReason,string>={incomplete:'Marcada como hecha, pero todavía faltan pasos',overdue:'Pasó la fecha',waiting:'Falta una respuesta',unconfirmed:'Falta confirmar',unassigned:'Falta responsable'};
+ return attentionReasonOrder.filter(reason=>reasons.includes(reason)).map((reason,index)=>index?copy[reason].toLocaleLowerCase('es'):copy[reason]).join(' · ');
+}
+export function attentionContext(r:FamilyRecord,today:string):string{
+ const date=r.date===today?'Hoy':r.date===addDays(today,-1)?'Ayer':r.date===addDays(today,1)?'Mañana':new Intl.DateTimeFormat('es',{day:'numeric',month:'short',...(r.date.slice(0,4)!==today.slice(0,4)?{year:'numeric' as const}:{}),timeZone:'UTC'}).format(new Date(r.date+'T12:00:00Z'));
+ return [r.owner.trim()||'Sin asignar',date,recordSource(r)].join(' · ');
+}
+export const attentionSummary=(count:number)=>count===0?'Todo al día':`${count} ${count===1?'asunto':'asuntos'} para revisar`;
+
+const localOneOff=(r:FamilyRecord)=>!r.readOnly&&r.kind==='task'&&r.recurrence==='none';
+export const canTriageOverdue=(r:FamilyRecord,reasons:AttentionReason[])=>localOneOff(r)&&reasons.includes('overdue');
+export const attentionTomorrow=(today:string):TriageAction=>({type:'reschedule',date:addDays(today,1)});
+type AttentionQuickAction={type:'complete'|'tomorrow'|'wait'|'reactivate'|'confirm'|'assign';label:string};
+export function attentionQuickActions(r:FamilyRecord,reasons:AttentionReason[]):AttentionQuickAction[]{
+ if(r.readOnly)return [];
+ const actions:AttentionQuickAction[]=[];
+ if(reasons.includes('incomplete'))actions.push({type:'complete',label:'Revisar pasos'});
+ if(canTriageOverdue(r,reasons)){
+  if(!reasons.includes('incomplete'))actions.push({type:'complete',label:'Hecha'});
+  actions.push({type:'tomorrow',label:'Mañana'},r.status==='waiting'?{type:'reactivate',label:'Reactivar'}:{type:'wait',label:'Esperando'});
+ }else if(localOneOff(r)&&reasons.includes('waiting'))actions.push({type:'reactivate',label:'Reactivar'});
+ if(reasons.includes('unconfirmed'))actions.push({type:'confirm',label:'Confirmar'});
+ if(reasons.includes('unassigned'))actions.push({type:'assign',label:'Asignar'});
+ return actions.slice(0,3);
 }

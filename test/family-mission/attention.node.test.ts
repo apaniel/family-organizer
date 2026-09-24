@@ -30,7 +30,7 @@ describe('canonical attention and daily health',()=>{
    record({id:'day-off',kind:'event',allDay:true})];
   const report=attentionReport(records,today);
   expect(report.items.map(i=>[i.record.id,i.reasons])).toEqual([
-   ['late',['overdue','waiting','unconfirmed','unassigned']],['broken',['incomplete']],['future',['unconfirmed']]
+   ['broken',['incomplete']],['late',['overdue','waiting','unconfirmed','unassigned']],['future',['unconfirmed']]
   ]);
   expect(report.counts).toEqual({overdue:1,waiting:1,unconfirmed:2,unassigned:1,incomplete:1});
   expect(report.health).toEqual({incomplete:1,stale:1,unassigned:1,approaching:1,overdue:1,waiting:1,unconfirmed:2})
@@ -42,7 +42,7 @@ describe('canonical attention and daily health',()=>{
   const daily=record({recurrence:'daily',date:'2026-09-01',owner:'Sin asignar',confirmed:false});
   const occurrence=record({id:'occurrence',status:'done',sourceKey:`completion:task:${today}`,checklist:[{text:'Libro',done:false}]});
   expect(attentionReport([daily,occurrence],today).items.map(i=>i.record.id)).toEqual(['occurrence']);
-  expect(attentionReport([daily,occurrence],'2026-09-25').items.map(i=>i.record.id)).toEqual(['task','occurrence']);
+  expect(attentionReport([daily,occurrence],'2026-09-25').items.map(i=>i.record.id)).toEqual(['occurrence','task']);
   expect(attentionReport([record({date:today})],today).counts.overdue).toBe(0);
   expect(attentionReport([record({date:today})],'2026-09-25').counts.overdue).toBe(1);
  });

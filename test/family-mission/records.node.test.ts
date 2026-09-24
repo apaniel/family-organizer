@@ -318,7 +318,7 @@ it.each(['all','partial','keep'] as const)('resolves the actual legacy completed
  // Today is not this template's occurrence date; the health alert concerns the template itself.
  const other=await create({sourceKey:`completion:${legacy.id}:2026-09-01`,recurrence:'none',status:'open',completionParent:{id:legacy.id,revision:legacy.revision}});
  const records=[legacy,other];
- expect(attentionReport(records,[],'2026-09-24').health.incomplete).toBe(1);
+ expect(attentionReport(records,'2026-09-24').health.incomplete).toBe(1);
  expect(completionAction(legacy,'2026-09-24',records)).toEqual({type:'choose'});
  const action=completionAction(legacy,'2026-09-24',records,choice,structuredClone(records));
  expect(action.type).toBe('save');
@@ -332,6 +332,6 @@ it.each(['all','partial','keep'] as const)('resolves the actual legacy completed
  expect(resolved).toMatchObject({status:choice==='keep'?'open':'done',checklist:[{done:choice==='all'}],revision:2});
  expect(resolved.completionDecision).toBe(choice==='keep'?undefined:choice);
  expect(loaded.records.find((r:FamilyRecord)=>r.id===other.id)).toMatchObject(other);
- expect(attentionReport(loaded.records,[],'2026-09-24').health.incomplete).toBe(0);
+ expect(attentionReport(loaded.records,'2026-09-24').health.incomplete).toBe(0);
  expect(sqlite.prepare('SELECT record_id FROM family_audit ORDER BY rowid').all().map((r:any)=>r.record_id)).toEqual([legacy.id,other.id,legacy.id]);
 });

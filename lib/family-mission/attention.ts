@@ -1,7 +1,7 @@
 import {addDays,occursOn,isPastOpenOccurrence,type FamilyRecord} from './model';
 
-export type AttentionReason='overdue'|'waiting'|'unconfirmed'|'unassigned'|'incomplete'|'duplicate';
-export const attentionLabels:Record<AttentionReason,string>={overdue:'Vencidas',waiting:'Esperando respuesta',unconfirmed:'Sin confirmar',unassigned:'Sin responsable',incomplete:'Cierres incompletos',duplicate:'Posibles duplicados'};
+export type AttentionReason='overdue'|'waiting'|'unconfirmed'|'unassigned'|'incomplete';
+export const attentionLabels:Record<AttentionReason,string>={overdue:'Vencidas',waiting:'Esperando respuesta',unconfirmed:'Sin confirmar',unassigned:'Sin responsable',incomplete:'Cierres incompletos'};
 export const isActive=(r:FamilyRecord)=>r.status!=='done'&&r.status!=='cancelled';
 const cancelledOccurrence=(r:FamilyRecord,records:FamilyRecord[],day:string)=>records.some(c=>c.sourceKey===`completion:${r.id}:${day}`&&c.status==='cancelled');
 const isOccurrence=(r:FamilyRecord)=>r.sourceKey?.startsWith('completion:');
@@ -19,19 +19,10 @@ export function normalTasks(records:FamilyRecord[],day:string,today:string){
 }
 export function activeWaiting(records:FamilyRecord[],today:string){return records.filter(r=>r.kind==='task'&&r.status==='waiting'&&activeOnwards(r,records,today));}
 export function activeDecisions(records:FamilyRecord[],today:string){return records.filter(r=>!r.confirmed&&activeOnwards(r,records,today));}
-// Preserve accents and punctuation: matching is deliberately exact after Unicode,
-// case and whitespace normalization. Never infer a scheduling conflict from overlap.
-const normalizedTitle=(title:string)=>title.normalize('NFC').trim().toLocaleLowerCase('es').replace(/\s+/g,' ');
-export function attentionReport(records:FamilyRecord[],google:FamilyRecord[],today:string){
- const duplicates:{local:FamilyRecord;google:FamilyRecord;date:string}[]=[];
- for(const local of records.filter(r=>r.kind==='event'&&!r.readOnly&&!/^Google Calendar/i.test(r.source)&&isActive(r))){
-  for(const remote of google.filter(r=>r.kind==='event'&&r.readOnly&&/^Google Calendar/i.test(r.source)&&isActive(r)&&r.date>=today)){
-   if((local.recurrence==='none'?local.date===remote.date:occursOn(local,remote.date))&&normalizedTitle(local.title)===normalizedTitle(remote.title))duplicates.push({local,google:remote,date:remote.date});
-  }
- }
- const counts:Record<AttentionReason,number>={overdue:0,waiting:0,unconfirmed:0,unassigned:0,incomplete:0,duplicate:0};
+export function attentionReport(records:FamilyRecord[],today:string){
+ const counts:Record<AttentionReason,number>={overdue:0,waiting:0,unconfirmed:0,unassigned:0,incomplete:0};
  const items:{record:FamilyRecord;reasons:AttentionReason[]}[]=[];
- const health={incomplete:0,stale:0,unassigned:0,approaching:0,duplicate:duplicates.length};
+ const health={incomplete:0,stale:0,unassigned:0,approaching:0};
  for(const r of records){
   if(r.status==='cancelled')continue;
   const reasons:AttentionReason[]=[];
@@ -45,10 +36,9 @@ export function attentionReport(records:FamilyRecord[],google:FamilyRecord[],tod
    if(r.kind!=='meal'&&unassigned(r)){reasons.push('unassigned');health.unassigned++;}
   }
   if(incompleteCompletion(r)){reasons.push('incomplete');health.incomplete++;}
-  if(duplicates.some(p=>p.local.id===r.id))reasons.push('duplicate');
   if(reasons.length){items.push({record:r,reasons});for(const reason of reasons)counts[reason]++;}
  }
- return {items,counts,duplicates,health:{...health,overdue:counts.overdue,waiting:counts.waiting,unconfirmed:counts.unconfirmed}};
+ return {items,counts,health:{...health,overdue:counts.overdue,waiting:counts.waiting,unconfirmed:counts.unconfirmed}};
 }
 
 export type TriageAction={type:'reschedule';date:string}|{type:'wait'}|{type:'cancel'};
@@ -97,11 +87,14 @@ export function completionAction(r:FamilyRecord,day:string,records:FamilyRecord[
  return {type:'save',record:{...target,status:'done',completionDecision:choice==='partial'||(!choice&&target.status==='done'&&target.completionDecision==='partial')?'partial':'all',checklist:choice==='all'?target.checklist.map(c=>({...c,done:true})):target.checklist}};
 }
 
-export function recordChips(r:FamilyRecord,day:string,records:FamilyRecord[]=[]):string[]{
+export function recordSource(r:FamilyRecord):string{
+ return r.readOnly&&/^Google Calendar/i.test(r.source)?'Google Calendar · solo lectura · editar allí':(!r.source||r.source==='Familia')?'Plan local':`Información importada · ${r.source}${r.readOnly?' · solo lectura':''}`;
+}
+
+export function attentionMetadata(r:FamilyRecord,day:string,records:FamilyRecord[]=[]):string{
  const effective=activeOccurrence(r,records,day)||occurrenceRecord(r,records,day)||r;
  const status=effective.status==='cancelled'?'Cancelada / archivada':effective.status==='done'?(effective.completionDecision==='partial'?'Completada parcialmente':'Completada'):effective.status==='waiting'?'Esperando respuesta':'Pendiente';
- const source=r.readOnly&&/^Google Calendar/i.test(r.source)?'Google Calendar · solo lectura · editar allí':(!r.source||r.source==='Familia')?'Panel familiar · plan local':`Información importada · ${r.source}${r.readOnly?' · solo lectura':''}`;
- return [effective.owner||'Sin asignar',status,...(isOverdue(effective,day)?['Vencida']:[]),...(isActive(effective)&&!effective.confirmed?['Sin confirmar']:[]),...(incompleteCompletion(effective)?['Lista incompleta']:[]),source];
+ return [effective.owner.trim()||'Sin asignar',status,recordSource(r)].join(' · ');
 }
 
 // Row date must travel with the editor, independently of the dashboard date.

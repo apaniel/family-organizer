@@ -6,8 +6,9 @@
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:cloudflare": "opennextjs-cloudflare build",
-    "deploy:cloudflare": "opennextjs-cloudflare deploy"
+    "build:cloudflare": "opennextjs-cloudflare build && npm run check:cloudflare",
+    "check:cloudflare": "node scripts/check-cloudflare-deploy.mjs",
+    "deploy:cloudflare": "opennextjs-cloudflare deploy --config wrangler.jsonc"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",

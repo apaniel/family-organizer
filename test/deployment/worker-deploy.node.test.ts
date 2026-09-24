@@ -4,6 +4,13 @@ import { describe, expect, it } from 'vitest';
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 
 describe('production worker deployment', () => {
+  it('retains the declarative SQLite lifecycle already provisioned in live version 83', () => {
+    const config = JSON.parse(readFileSync('wrangler.jsonc', 'utf8'));
+    expect(config.exports?.ChatNotifications).toEqual({ type: 'durable-object', storage: 'sqlite' });
+    expect(config).not.toHaveProperty('migrations');
+    expect(config.durable_objects.bindings).toContainEqual({ name: 'CHAT_NOTIFICATIONS', class_name: 'ChatNotifications' });
+  });
+
   it('pins the source config so generated deploy redirects cannot bypass the custom worker', () => {
     expect(pkg.scripts['deploy:cloudflare']).toBe('opennextjs-cloudflare deploy --config wrangler.jsonc');
   });

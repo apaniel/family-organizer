@@ -58,12 +58,10 @@
       }
     ]
   },
-  "migrations": [
-    {
-      "tag": "chat-notifications-v1",
-      "new_sqlite_classes": [
-        "ChatNotifications"
-      ]
+  "exports": {
+    "ChatNotifications": {
+      "type": "durable-object",
+      "storage": "sqlite"
     }
-  ]
+  }
 }

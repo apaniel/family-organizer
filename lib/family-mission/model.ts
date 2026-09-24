@@ -1,6 +1,6 @@
 export type Kind = 'task' | 'event' | 'meal';
 export type FamilyRecord = { id: string; kind: Kind; revision: number; title: string; date: string; endDate?: string;
- time?: string; endTime?: string; owner: string; status: 'open'|'done'|'waiting'; category: string; notes: string;
+ time?: string; endTime?: string; owner: string; status: 'open'|'done'|'waiting'|'cancelled'; completionDecision?: 'all'|'partial'; completionParent?: {id:string;revision:number}; category: string; notes: string;
  checklist: {text:string;done:boolean}[]; audience: 'adults'|'kids'; slot:'lunch'|'dinner'; recurrence:'none'|'daily'|'weekdays'|'weekly'|'yearly';
  source: string; sourceKey?: string; confirmed: boolean; reminderDays: number; updatedAt?: string; readOnly?: boolean; color?: string; foregroundColor?: string; allDay?: boolean };
 export function dateKey(date = new Date()) { return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Madrid'}).format(date); }
@@ -52,14 +52,28 @@ export function validateRecord(raw: any): Omit<FamilyRecord,'id'|'revision'> {
  if(raw.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(raw.time)) throw new Error('Revisa la hora.');
  if(raw.endTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(raw.endTime)) throw new Error('Revisa la hora final.');
  if(raw.kind==='meal' && raw.status==='done') throw new Error('Los menús no tienen estado completado.');
- return {kind:raw.kind,title:text(raw.title,200),date:raw.date,endDate:raw.endDate||'',time:raw.time||'',endTime:raw.endTime||'',
- owner:text(raw.owner,60)||'Sin asignar',status:['open','done','waiting'].includes(raw.status)?raw.status:'open',category:text(raw.category,40)||'family',notes:text(raw.notes,5000),
- checklist:Array.isArray(raw.checklist)?raw.checklist.slice(0,40).map((c:any)=>({text:text(c.text,250),done:c.done===true})).filter((c:any)=>c.text):[],
+ if(raw.completionDecision!==undefined && !['all','partial'].includes(raw.completionDecision))throw new Error('Decisión de finalización no válida.');
+ // Optional for historical records; new occurrence inserts require this in the store.
+ let completionParent:FamilyRecord['completionParent'];
+ if(raw.completionParent!==undefined){
+  const parent=raw.completionParent;
+  const key=typeof raw.sourceKey==='string'?/^completion:(.+):(\d{4}-\d{2}-\d{2})$/.exec(raw.sourceKey):null;
+  if(!parent||typeof parent.id!=='string'||!parent.id||!Number.isSafeInteger(parent.revision)||parent.revision<1||raw.kind!=='task'||raw.recurrence!=='none'||!key||key[1]!==parent.id||!validDate(key[2]))
+   throw new Error('Referencia de tarea recurrente no válida.');
+  completionParent={id:parent.id,revision:parent.revision};
+ }
+ const checklist=Array.isArray(raw.checklist)?raw.checklist.slice(0,40).map((c:any)=>({text:text(c.text,250),done:c.done===true})).filter((c:any)=>c.text):[];
+ if(raw.kind==='task'&&raw.status==='done'&&raw.completionDecision==='all'&&checklist.some((c:{done:boolean})=>!c.done))throw new Error('Completa toda la lista o elige un cierre parcial.');
+ return {completionParent,completionDecision:raw.kind==='task'&&raw.status==='done'?raw.completionDecision:undefined,kind:raw.kind,title:text(raw.title,200),date:raw.date,endDate:raw.endDate||'',time:raw.time||'',endTime:raw.endTime||'',
+ owner:text(raw.owner,60)||'Sin asignar',status:['open','done','waiting','cancelled'].includes(raw.status)?raw.status:'open',category:text(raw.category,40)||'family',notes:text(raw.notes,5000),
+ checklist,
  audience:raw.audience==='kids'?'kids':'adults',slot:raw.slot==='lunch'?'lunch':'dinner',recurrence:['daily','weekdays','weekly','yearly'].includes(raw.recurrence)?raw.recurrence:'none',
  source:text(raw.source,500)||'Familia',sourceKey:text(raw.sourceKey,250)||undefined,confirmed:raw.confirmed!==false,reminderDays:Math.max(0,Math.min(180,Number(raw.reminderDays)||0))};
 }
+// Past open occurrences carry unfinished work separately from today's series row.
+export const isPastOpenOccurrence=(r:FamilyRecord,today:string)=>!!r.sourceKey?.startsWith('completion:')&&r.kind==='task'&&r.recurrence==='none'&&(r.status==='open'||r.status==='waiting')&&r.date<today;
 export function reminderCandidates(records:FamilyRecord[],today:string) {
- return records.filter(r=>r.confirmed && r.status!=='done' && r.kind!=='meal' && !r.sourceKey?.startsWith('completion:') && !records.some(c=>c.sourceKey===`completion:${r.id}:${today}` && c.status==='done')).filter(r=>{
+ return records.filter(r=>r.confirmed && r.status!=='cancelled' && r.status!=='done' && r.kind!=='meal' && !records.some(c=>c.sourceKey===`completion:${r.id}:${today}` && (c.date===today||c.status==='done'||c.status==='cancelled'))).filter(r=>{
   if(r.kind==='task'&&r.recurrence==='none'&&r.date<=today)return true;
   for(let i=0;i<=r.reminderDays;i++)if(occursOn(r,addDays(today,i)))return true;
   return false;

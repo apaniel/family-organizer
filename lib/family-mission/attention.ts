@@ -1,0 +1,146 @@
+import {addDays,occursOn,isPastOpenOccurrence,type FamilyRecord} from './model';
+
+export type AttentionReason='overdue'|'waiting'|'unconfirmed'|'unassigned'|'incomplete'|'duplicate';
+export const attentionLabels:Record<AttentionReason,string>={overdue:'Vencidas',waiting:'Esperando respuesta',unconfirmed:'Sin confirmar',unassigned:'Sin responsable',incomplete:'Cierres incompletos',duplicate:'Posibles duplicados'};
+export const isActive=(r:FamilyRecord)=>r.status!=='done'&&r.status!=='cancelled';
+const cancelledOccurrence=(r:FamilyRecord,records:FamilyRecord[],day:string)=>records.some(c=>c.sourceKey===`completion:${r.id}:${day}`&&c.status==='cancelled');
+const isOccurrence=(r:FamilyRecord)=>r.sourceKey?.startsWith('completion:');
+const activeOccurrence=(r:FamilyRecord,records:FamilyRecord[],day:string)=>records.find(c=>c.sourceKey===`completion:${r.id}:${day}`&&c.date===day&&isActive(c));
+export function occurrenceRecord(r:FamilyRecord,records:FamilyRecord[],day:string){return records.find(c=>c.sourceKey===`completion:${r.id}:${day}`&&c.status==='done');}
+export function isCompleted(r:FamilyRecord,records:FamilyRecord[],day:string){return r.status==='done'||!!occurrenceRecord(r,records,day);}
+export const isOverdue=(r:FamilyRecord,today:string)=>r.kind==='task'&&isActive(r)&&r.recurrence==='none'&&r.date<today;
+export const incompleteCompletion=(r:FamilyRecord)=>r.kind==='task'&&r.status==='done'&&r.completionDecision!=='partial'&&r.checklist.some(c=>!c.done);
+const unassigned=(r:FamilyRecord)=>!r.owner.trim()||r.owner.trim().toLocaleLowerCase('es')==='sin asignar';
+function activeOnwards(r:FamilyRecord,records:FamilyRecord[],today:string){
+ return isActive(r)&&!cancelledOccurrence(r,records,today)&&(!isOccurrence(r)||r.date===today||isPastOpenOccurrence(r,today))&&!activeOccurrence(r,records,today)&&!occurrenceRecord(r,records,today)&&(r.kind==='task'||r.recurrence!=='none'||(r.endDate||r.date)>=today);
+}
+export function normalTasks(records:FamilyRecord[],day:string,today:string){
+ return records.filter(r=>r.kind==='task'&&r.status!=='cancelled'&&!cancelledOccurrence(r,records,day)&&!activeOccurrence(r,records,day)&&(!isOccurrence(r)||(isActive(r)&&r.date===day)||(day===today&&isPastOpenOccurrence(r,today)))&&(occursOn(r,day)||(day===today&&isOverdue(r,today))));
+}
+export function activeWaiting(records:FamilyRecord[],today:string){return records.filter(r=>r.kind==='task'&&r.status==='waiting'&&activeOnwards(r,records,today));}
+export function activeDecisions(records:FamilyRecord[],today:string){return records.filter(r=>!r.confirmed&&activeOnwards(r,records,today));}
+// Preserve accents and punctuation: matching is deliberately exact after Unicode,
+// case and whitespace normalization. Never infer a scheduling conflict from overlap.
+const normalizedTitle=(title:string)=>title.normalize('NFC').trim().toLocaleLowerCase('es').replace(/\s+/g,' ');
+export function attentionReport(records:FamilyRecord[],google:FamilyRecord[],today:string){
+ const duplicates:{local:FamilyRecord;google:FamilyRecord;date:string}[]=[];
+ for(const local of records.filter(r=>r.kind==='event'&&!r.readOnly&&!/^Google Calendar/i.test(r.source)&&isActive(r))){
+  for(const remote of google.filter(r=>r.kind==='event'&&r.readOnly&&/^Google Calendar/i.test(r.source)&&isActive(r)&&r.date>=today)){
+   if((local.recurrence==='none'?local.date===remote.date:occursOn(local,remote.date))&&normalizedTitle(local.title)===normalizedTitle(remote.title))duplicates.push({local,google:remote,date:remote.date});
+  }
+ }
+ const counts:Record<AttentionReason,number>={overdue:0,waiting:0,unconfirmed:0,unassigned:0,incomplete:0,duplicate:0};
+ const items:{record:FamilyRecord;reasons:AttentionReason[]}[]=[];
+ const health={incomplete:0,stale:0,unassigned:0,approaching:0,duplicate:duplicates.length};
+ for(const r of records){
+  if(r.status==='cancelled')continue;
+  const reasons:AttentionReason[]=[];
+  if(activeOnwards(r,records,today)){
+   if(isOverdue(r,today)){reasons.push('overdue');if(r.date<=addDays(today,-7))health.stale++;}
+   if(r.kind==='task'&&r.status==='waiting')reasons.push('waiting');
+   if(!r.confirmed){
+    reasons.push('unconfirmed');
+    if(r.kind==='event'&&Array.from({length:8},(_,i)=>addDays(today,i)).some(d=>occursOn(r,d)))health.approaching++;
+   }
+   if(r.kind!=='meal'&&unassigned(r)){reasons.push('unassigned');health.unassigned++;}
+  }
+  if(incompleteCompletion(r)){reasons.push('incomplete');health.incomplete++;}
+  if(duplicates.some(p=>p.local.id===r.id))reasons.push('duplicate');
+  if(reasons.length){items.push({record:r,reasons});for(const reason of reasons)counts[reason]++;}
+ }
+ return {items,counts,duplicates,health:{...health,overdue:counts.overdue,waiting:counts.waiting,unconfirmed:counts.unconfirmed}};
+}
+
+export type TriageAction={type:'reschedule';date:string}|{type:'wait'}|{type:'cancel'};
+export function triageTask(r:FamilyRecord,action:TriageAction):FamilyRecord{
+ if(r.readOnly||r.kind!=='task'||r.recurrence!=='none')throw new Error('Esta acción requiere una tarea local sin repetición.');
+ if(action.type==='reschedule'){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(action.date)||!Number.isFinite(Date.parse(action.date))||new Date(action.date+'T12:00:00Z').toISOString().slice(0,10)!==action.date)throw new Error('Indica una fecha válida.');
+  return {...r,date:action.date,status:'open',completionDecision:undefined};
+ }
+ return {...r,status:action.type==='wait'?'waiting':'cancelled',completionDecision:undefined};
+}
+export const completionChoices=[
+ {value:'all',label:'Completar toda la lista y cerrar'},
+ {value:'partial',label:'Cerrar como parcialmente completada'},
+ {value:'keep',label:'Mantener abierta'},
+] as const;
+export type CompletionChoice=typeof completionChoices[number]['value'];
+type CompletionAction={type:'create-template';record:FamilyRecord}|{type:'choose'}|{type:'keep'}|{type:'save';record:FamilyRecord & {completeOn?:string;completeChoice?:CompletionChoice}};
+export function completionAction(r:FamilyRecord,day:string,records:FamilyRecord[],choice?:CompletionChoice,snapshot?:FamilyRecord[]):CompletionAction{
+ if(snapshot){
+  if(r.recurrence!=='none'){
+   const expected=snapshot.find(c=>c.id===r.id),current=records.find(c=>c.id===r.id);
+   if(expected?.revision!==current?.revision||expected?.status!==current?.status||current?.status==='cancelled')
+    throw new Error('Esta tarea ha cambiado. Actualiza la página y vuelve a abrir la decisión.');
+  }
+  const find=(list:FamilyRecord[])=>r.recurrence!=='none'
+   ?list.find(c=>c.sourceKey===`completion:${r.id}:${day}`)
+   :list.find(c=>r.id?c.id===r.id:!!r.sourceKey&&c.sourceKey===r.sourceKey);
+  const expected=find(snapshot),current=find(records);
+  if(expected?.id!==current?.id||expected?.revision!==current?.revision||expected?.status!==current?.status||current?.status==='cancelled')
+   throw new Error('Esta tarea ha cambiado. Actualiza la página y vuelve a abrir la decisión.');
+ }
+ if(r.readOnly||r.kind!=='task'||r.status==='cancelled')throw new Error('Esta tarea no se puede completar.');
+ let target=r;
+ const legacyClosure=!!r.id&&!!r.revision&&incompleteCompletion(records.find(current=>current.id===r.id)||r);
+ if(r.recurrence!=='none'&&!legacyClosure){
+  if(!r.id||!r.revision)return {type:'create-template',record:{...r,status:'open',completionDecision:undefined}};
+  if(!occursOn(r,day))throw new Error('La tarea no corresponde a este día.');
+  const sourceKey=`completion:${r.id}:${day}`;
+  target=(snapshot||records).find(c=>c.sourceKey===sourceKey)||{...r,id:'',revision:0,date:day,recurrence:'none',status:'open',sourceKey,completionParent:{id:r.id,revision:r.revision}};
+  if(target.date!==day)throw new Error('Esta tarea ha cambiado. Actualiza la página y vuelve a abrir la decisión.');
+ }
+ if(target.status==='cancelled')throw new Error('Esta tarea ha cambiado. Actualiza la página y vuelve a abrir la decisión.');
+ if(choice==='keep')return target.status==='done'?{type:'save',record:{...target,status:'open',completionDecision:undefined}}:{type:'keep'};
+ if(!choice&&target.checklist.some(c=>!c.done)&&(target.status!=='done'||target.completionDecision!=='partial'))return {type:'choose'};
+ return {type:'save',record:{...target,status:'done',completionDecision:choice==='partial'||(!choice&&target.status==='done'&&target.completionDecision==='partial')?'partial':'all',checklist:choice==='all'?target.checklist.map(c=>({...c,done:true})):target.checklist}};
+}
+
+export function recordChips(r:FamilyRecord,day:string,records:FamilyRecord[]=[]):string[]{
+ const effective=activeOccurrence(r,records,day)||occurrenceRecord(r,records,day)||r;
+ const status=effective.status==='cancelled'?'Cancelada / archivada':effective.status==='done'?(effective.completionDecision==='partial'?'Completada parcialmente':'Completada'):effective.status==='waiting'?'Esperando respuesta':'Pendiente';
+ const source=r.readOnly&&/^Google Calendar/i.test(r.source)?'Google Calendar · solo lectura · editar allí':(!r.source||r.source==='Familia')?'Panel familiar · plan local':`Información importada · ${r.source}${r.readOnly?' · solo lectura':''}`;
+ return [effective.owner||'Sin asignar',status,...(isOverdue(effective,day)?['Vencida']:[]),...(isActive(effective)&&!effective.confirmed?['Sin confirmar']:[]),...(incompleteCompletion(effective)?['Lista incompleta']:[]),source];
+}
+
+// Row date must travel with the editor, independently of the dashboard date.
+export function taskEditorContext(record:FamilyRecord,day:string,records:FamilyRecord[]){
+ const occurrence=record.kind==='task'&&record.recurrence!=='none'
+  ?records.find(r=>r.sourceKey===`completion:${record.id}:${day}`):undefined;
+ return {record:occurrence||record,day};
+}
+
+export function calendarLoadRanges(day:string,today:string,includeToday:boolean){
+ const months=[day.slice(0,7),...(includeToday?[today.slice(0,7)]:[])];
+ return Array.from(new Set(months)).map(month=>{
+  const from=addDays(month+'-01',-7);
+  return {from,to:addDays(from,70)};
+ });
+}
+
+// Resolve template creation before presenting a completion decision.
+export async function prepareCompletion(record:FamilyRecord,day:string,records:FamilyRecord[],saveTemplate:(record:FamilyRecord)=>Promise<FamilyRecord|false>,choice?:CompletionChoice,snapshot?:FamilyRecord[]){
+ let action=completionAction(record,day,records,choice,snapshot);
+ if(action.type==='create-template'){
+  const template=await saveTemplate(action.record);
+  if(!template)return null;
+  record=template;
+  records=[template,...records.filter(current=>current.id!==template.id)];
+  action=completionAction(record,day,records,choice);
+ }
+ return {action,record,snapshot:structuredClone(records)};
+}
+
+// Plan editor writes without performing I/O or changing editor/record state.
+export function editorSaveAction(r:FamilyRecord,editingDay:string,records:FamilyRecord[],choice?:CompletionChoice,snapshot?:FamilyRecord[]):CompletionAction{
+ if(r.kind!=='task'||r.status!=='done')return {type:'save',record:r};
+ const day=!r.id||r.date!==records.find(current=>current.id===r.id)?.date?r.date:editingDay;
+ if(r.recurrence!=='none'&&(!r.id||(snapshot||records).find(current=>current.id===r.id)?.recurrence==='none')){
+  if(r.id&&records.find(current=>current.id===r.id)?.revision!==r.revision)throw new Error('Esta tarea ha cambiado. Actualiza la página y vuelve a abrir la decisión.');
+  if(choice==='keep')return {type:'keep'};
+  if(!choice&&r.checklist.some(c=>!c.done)&&r.completionDecision!=='partial')return {type:'choose'};
+  return {type:'save',record:{...r,status:'done',completeOn:day,completeChoice:choice,completionDecision:choice==='partial'||(!choice&&r.completionDecision==='partial')?'partial':undefined}};
+ }
+ return completionAction(r,day,records,choice,snapshot);
+}

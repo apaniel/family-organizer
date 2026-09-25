@@ -4,7 +4,7 @@ import type {FamilyRecord} from '@/lib/family-mission/model';
 
 export default function AttentionCentre({records,today,onOpen,busy,onTriage,onComplete,onConfirm}:{records:FamilyRecord[];today:string;onOpen:(record:FamilyRecord)=>void;busy:boolean;onTriage:(record:FamilyRecord,action:TriageAction)=>void;onComplete:(record:FamilyRecord)=>void;onConfirm:(record:FamilyRecord)=>void}){
  const report=attentionReport(records,today);
- const healthLabels={overdue:'Tareas vencidas',waiting:'Tareas esperando respuesta',unconfirmed:'Elementos sin confirmar',incomplete:attentionLabels.incomplete,stale:'Tareas vencidas hace 7 días o más',unassigned:'Elementos sin responsable',approaching:'Planes sin confirmar en los próximos 7 días'};
+ const healthLabels={overdue:'Tareas vencidas',waiting:'Tareas esperando respuesta',unconfirmed:'Elementos sin confirmar',stale:'Tareas vencidas hace 7 días o más',unassigned:'Elementos sin responsable',approaching:'Planes sin confirmar en los próximos 7 días'};
  const renderItem=({record,reasons}: typeof report.items[number])=><article className="mc-attention-row" key={record.id}>
     <button className="mc-attention-title" onClick={()=>onOpen(record)}><strong>{record.title}</strong></button>
     <p className="mc-attention-context">{attentionContext(record,today)}</p>

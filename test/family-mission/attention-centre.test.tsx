@@ -44,15 +44,14 @@ describe('attention card interactions',()=>{
   const waiting=record({id:'waiting',title:'Respuesta',date:today,status:'waiting'});
   const event=record({id:'event',kind:'event',title:'Excursión',date:today,confirmed:false,owner:''});
   const cb=setup([steps,waiting,event]);
-  fireEvent.click(screen.getByRole('button',{name:'Revisar pasos'}));
-  expect(cb.onComplete).toHaveBeenCalledWith(steps);
+  expect(screen.queryByRole('button',{name:'Revisar pasos'})).toBeNull();
   fireEvent.click(screen.getByRole('button',{name:'Reactivar'}));
   expect(cb.onTriage).toHaveBeenCalledWith(waiting,{type:'reactivate'});
   fireEvent.click(screen.getByRole('button',{name:'Confirmar'}));
   expect(cb.onConfirm).toHaveBeenCalledExactlyOnceWith(event);
   fireEvent.click(screen.getByRole('button',{name:'Asignar'}));
   expect(cb.onOpen).toHaveBeenCalledWith(event);
-  expect(screen.getByText('Marcada como hecha, pero todavía faltan pasos')).toBeVisible();
+  expect(screen.queryByText('Marcada como hecha, pero todavía faltan pasos')).toBeNull();
  });
  it('shows only the editor link for a read-only card',()=>{
   setup([record({readOnly:true,status:'waiting',confirmed:false,owner:'',source:'Google Calendar'})]);

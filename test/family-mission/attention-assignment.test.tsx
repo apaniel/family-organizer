@@ -34,3 +34,28 @@ it('assigns an unassigned event through Asignar and the existing editor save pat
  expect(JSON.parse(String(writes[0][1]?.body))).toEqual({...event,owner:'Cris'});
  expect(screen.queryByRole('button',{name:'Asignar'})).toBeNull();
 });
+it('shows binary tasks without checklist controls, progress or incomplete warnings',async()=>{
+ vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
+ const user=userEvent.setup();
+ const task={...validateRecord({kind:'task',title:'Tarea binaria',owner:'Cris',date:dateKey(),checklist:[{text:'Paso antiguo',done:false}]}),id:'binary',revision:1};
+ vi.stubGlobal('fetch',vi.fn(async(url:string)=>({ok:true,json:async()=>url.includes('/calendar')?{events:[]}:{records:[task,{...task,id:'done',title:'Hecha antigua',status:'done'}]}})));
+ render(<MissionControl view="today"/>);
+ await user.click(await screen.findByRole('button',{name:/^Tarea binaria/}));
+ expect(screen.queryByText('Lista de preparación')).toBeNull();
+ expect(screen.queryByRole('button',{name:'Añadir elemento'})).toBeNull();
+ expect(screen.queryByText(/preparados/)).toBeNull();
+ expect(screen.queryByText(/Marcada como hecha/)).toBeNull();
+ expect(screen.queryByText(/Tareas hechas con pasos pendientes/)).toBeNull();
+});
+it('completes directly with one status write and no choice dialog',async()=>{
+ vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
+ const user=userEvent.setup();
+ const task={...validateRecord({kind:'task',title:'Acción única',date:dateKey()}),id:'binary',revision:1};
+ const request=vi.fn(async(url:string,init?:RequestInit)=>({ok:true,json:async()=>init?.method==='POST'?{record:{...JSON.parse(String(init.body)),revision:2}}:url.includes('/calendar')?{events:[]}:{records:[task]}}));
+ vi.stubGlobal('fetch',request);
+ render(<MissionControl view="today"/>);
+ await user.click(await screen.findByRole('checkbox',{name:'Completar Acción única'}));
+ await waitFor(()=>expect(request.mock.calls.filter(([,init])=>init?.method==='POST')).toHaveLength(1));
+ expect(screen.queryByRole('dialog')).toBeNull();
+ expect(JSON.parse(String(request.mock.calls.find(([,init])=>init?.method==='POST')![1]!.body))).toMatchObject({status:'done',checklist:[]});
+});

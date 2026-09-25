@@ -6,8 +6,6 @@ const record=(patch:Partial<FamilyRecord>={}):FamilyRecord=>({...validateRecord(
 
 describe('phone attention copy',()=>{
  it('explains every reason in plain Spanish with stable priority and no repeated reasons',()=>{
-  expect(attentionLabels.incomplete).toBe('Tareas hechas con pasos pendientes');
-  expect(attentionReasonCopy(['incomplete'])).toBe('Marcada como hecha, pero todavía faltan pasos');
   expect(attentionReasonCopy(['unassigned','waiting','overdue','unconfirmed','overdue'])).toBe('Pasó la fecha · falta una respuesta · falta confirmar · falta responsable');
   expect(attentionReasonCopy(['waiting'])).toBe('Falta una respuesta');
   expect(attentionReasonCopy(['unconfirmed'])).toBe('Falta confirmar');
@@ -30,14 +28,12 @@ describe('phone attention copy',()=>{
 
 import {attentionQuickActions,attentionTomorrow,triageTask,canTriageOverdue,type AttentionReason} from '@/lib/family-mission/attention';
 describe('phone attention actions',()=>{
- it('prioritizes steps, then overdue resolution, then confirmation and assignment; caps at three',()=>{
+ it('prioritizes overdue resolution, then confirmation and assignment; caps at three',()=>{
   const overdue=record({date:'2026-09-20',confirmed:false,owner:''});
   const reasons:AttentionReason[]=['unassigned','unconfirmed','overdue'];
   expect(attentionQuickActions(overdue,reasons)).toEqual([{type:'complete',label:'Hecha'},{type:'tomorrow',label:'Mañana'},{type:'wait',label:'Esperando'}]);
   expect(attentionQuickActions(overdue,[...reasons].reverse())).toEqual(attentionQuickActions(overdue,reasons));
-  expect(attentionQuickActions(record({status:'done'}),['incomplete'])).toEqual([{type:'complete',label:'Revisar pasos'}]);
   expect(attentionQuickActions(record({kind:'event',confirmed:false,owner:''}),['unassigned','unconfirmed'])).toEqual([{type:'confirm',label:'Confirmar'},{type:'assign',label:'Asignar'}]);
-  expect(attentionQuickActions(overdue,['incomplete',...reasons]).map(a=>a.label)).toEqual(['Revisar pasos','Mañana','Esperando']);
  });
  it('reactivates waiting tasks, including overdue ones, and preserves recurring safeguards',()=>{
   expect(attentionQuickActions(record({status:'waiting'}),['waiting'])).toEqual([{type:'reactivate',label:'Reactivar'}]);
@@ -47,7 +43,7 @@ describe('phone attention actions',()=>{
   expect(canTriageOverdue(record({recurrence:'daily'}),['overdue'])).toBe(false);
  });
  it('suppresses all writes and secondary controls for read-only records regardless of reasons',()=>{
-  const reasons:AttentionReason[]=['incomplete','overdue','waiting','unconfirmed','unassigned'];
+  const reasons:AttentionReason[]=['overdue','waiting','unconfirmed','unassigned'];
   expect(attentionQuickActions(record({readOnly:true}),reasons)).toEqual([]);
   expect(canTriageOverdue(record({readOnly:true}),reasons)).toBe(false);
   expect(canTriageOverdue(record(),['overdue'])).toBe(true);
@@ -81,7 +77,7 @@ describe('attention preview ordering',()=>{
    record({id:'overdue-old',date:'2026-09-21',confirmed:false}),
    record({id:'incomplete',status:'done',checklist:[{text:'Paso',done:false}]}),
   ];
-  const expected=['incomplete','overdue-old','overdue-a','overdue-z','unconfirmed','waiting','unassigned'];
+  const expected=['overdue-old','overdue-a','overdue-z','unconfirmed','waiting','unassigned'];
   expect(attentionReport(fixtures,today).items.map(i=>i.record.id)).toEqual(expected);
   expect(attentionReport([...fixtures].reverse(),today).items.map(i=>i.record.id)).toEqual(expected);
   expect(fixtures[0].id).toBe('unassigned');

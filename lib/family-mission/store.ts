@@ -10,7 +10,11 @@ const defaultProvenance:CompletionProvenance={mode:'inferred',channel:'other'};
 function creationAudit(db:any,id:string,now:string,provenance:CompletionProvenance) {
  return db.prepare("INSERT INTO family_audit(record_id,action,after_data,occurred_at,completion_mode,completion_channel) SELECT id,?,data,?,CASE WHEN kind='task' AND json_extract(data,'$.status')='done' THEN ? END,CASE WHEN kind='task' AND json_extract(data,'$.status')='done' THEN ? END FROM family_records WHERE id=?").bind('create',now,provenance.mode,provenance.channel,id);
 }
+function assertBinaryTask(raw:any){
+ if(raw?.kind==='task'&&raw.checklist!==undefined&&(!Array.isArray(raw.checklist)||raw.checklist.length))throw new Error('Cada acción debe ser una tarea separada. Migra la lista antigua antes de guardar.');
+}
 export async function saveRecord(raw:any,provenance:CompletionProvenance=defaultProvenance) {
+ assertBinaryTask(raw);
  const data=validateRecord(raw);const db=await database();const now=new Date().toISOString();
  if(raw.id) {
   const old=await db.prepare('SELECT * FROM family_records WHERE id=?').bind(raw.id).first();
@@ -50,6 +54,7 @@ export async function removeRecord(id:string,revision:number) {
 
 // D1 batches are transactions: an occurrence failure rolls back its template and audits.
 export async function saveCompletedTask(raw:any,provenance:CompletionProvenance=defaultProvenance) {
+ assertBinaryTask(raw);
  const data=validateRecord(raw);
  if(data.kind!=='task'||data.recurrence==='none'||data.status!=='done'||!/^\d{4}-\d{2}-\d{2}$/.test(raw.completeOn)||!occursOn({...data,id:'',revision:0},raw.completeOn))throw new Error('La tarea no corresponde a este día.');
  const id=raw.id||crypto.randomUUID(),revision=raw.id?raw.revision+1:1,occurrenceId=crypto.randomUUID(),now=new Date().toISOString();

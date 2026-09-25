@@ -30,10 +30,10 @@ describe('canonical attention and daily health',()=>{
    record({id:'day-off',kind:'event',allDay:true})];
   const report=attentionReport(records,today);
   expect(report.items.map(i=>[i.record.id,i.reasons])).toEqual([
-   ['broken',['incomplete']],['late',['overdue','waiting','unconfirmed','unassigned']],['future',['unconfirmed']]
+   ['late',['overdue','waiting','unconfirmed','unassigned']],['future',['unconfirmed']]
   ]);
-  expect(report.counts).toEqual({overdue:1,waiting:1,unconfirmed:2,unassigned:1,incomplete:1});
-  expect(report.health).toEqual({incomplete:1,stale:1,unassigned:1,approaching:1,overdue:1,waiting:1,unconfirmed:2})
+  expect(report.counts).toEqual({overdue:1,waiting:1,unconfirmed:2,unassigned:1});
+  expect(report.health).toEqual({stale:1,unassigned:1,approaching:1,overdue:1,waiting:1,unconfirmed:2})
   expect(Object.keys(report).sort()).toEqual(['counts','health','items']);;
   expect(normalTasks(records,today,today).map(r=>r.id)).toEqual(['late','broken','partial']);
   expect(activeDecisions(records,today).map(r=>r.id)).toEqual(['late','future']);
@@ -41,15 +41,15 @@ describe('canonical attention and daily health',()=>{
  it('recomputes at rollover and suppresses completed recurring occurrences without losing inconsistencies',()=>{
   const daily=record({recurrence:'daily',date:'2026-09-01',owner:'Sin asignar',confirmed:false});
   const occurrence=record({id:'occurrence',status:'done',sourceKey:`completion:task:${today}`,checklist:[{text:'Libro',done:false}]});
-  expect(attentionReport([daily,occurrence],today).items.map(i=>i.record.id)).toEqual(['occurrence']);
-  expect(attentionReport([daily,occurrence],'2026-09-25').items.map(i=>i.record.id)).toEqual(['occurrence','task']);
+  expect(attentionReport([daily,occurrence],today).items.map(i=>i.record.id)).toEqual([]);
+  expect(attentionReport([daily,occurrence],'2026-09-25').items.map(i=>i.record.id)).toEqual(['task']);
   expect(attentionReport([record({date:today})],today).counts.overdue).toBe(0);
   expect(attentionReport([record({date:today})],'2026-09-25').counts.overdue).toBe(1);
  });
 
 });
 
-import {triageTask,completionAction,completionChoices} from '@/lib/family-mission/attention';
+import {triageTask,completionAction} from '@/lib/family-mission/attention';
 describe('revision-aware task actions',()=>{
  it('reschedules, waits and archives the same record without changing provenance or checklist',()=>{
   const task=record({date:'2026-09-01',source:'Importado del correo',sourceKey:'mail:123',checklist:[{text:'Libro',done:false}]});
@@ -60,31 +60,15 @@ describe('revision-aware task actions',()=>{
   expect(()=>triageTask({...task,readOnly:true},{type:'cancel'})).toThrow();
   expect(()=>triageTask({...task,recurrence:'daily'},{type:'reschedule',date:today})).toThrow();
  });
- it('requires exactly three choices and never silently closes an incomplete checklist',()=>{
-  const task=record({checklist:[{text:'Libro',done:false}]});
-  expect(completionChoices.map(c=>c.label)).toEqual(['Completar toda la lista y cerrar','Cerrar como parcialmente completada','Mantener abierta']);
-  expect(completionAction(task,today,[])).toEqual({type:'choose'});
-  expect(completionAction(task,today,[],'keep')).toEqual({type:'keep'});
-  expect(completionAction(task,today,[],'all')).toEqual({type:'save',record:{...task,status:'done',completionDecision:'all',checklist:[{text:'Libro',done:true}]}});
-  expect(completionAction(task,today,[],'partial')).toEqual({type:'save',record:{...task,status:'done',completionDecision:'partial'}});
-  expect(completionAction(record(),today,[]).type).toBe('save');
-  expect(()=>completionAction({...task,readOnly:true},today,[])).toThrow();
- });
  it('completes the requested recurring occurrence, reuses its revision and leaves the template untouched',()=>{
   const template=record({recurrence:'daily',date:'2026-09-01',checklist:[{text:'Libro',done:false}]});
   const before=structuredClone(template);
-  const result=completionAction(template,'2026-09-25',[],'partial');
-  expect(result).toEqual({type:'save',record:{...template,id:'',revision:0,date:'2026-09-25',recurrence:'none',status:'done',sourceKey:'completion:task:2026-09-25',completionDecision:'partial',completionParent:{id:template.id,revision:template.revision}}});
+  const result=completionAction(template,'2026-09-25',[]);
+  expect(result).toEqual({type:'save',record:{...template,id:'',revision:0,date:'2026-09-25',recurrence:'none',status:'done',sourceKey:'completion:task:2026-09-25',completionDecision:undefined,completionParent:{id:template.id,revision:template.revision}}});
   const existing=record({id:'occurrence',revision:8,status:'done',date:'2026-09-25',sourceKey:'completion:task:2026-09-25',checklist:template.checklist});
-  expect(completionAction(template,'2026-09-25',[existing],'all')).toMatchObject({type:'save',record:{id:'occurrence',revision:8,completionDecision:'all',checklist:[{text:'Libro',done:true}]}});
+  expect(completionAction(template,'2026-09-25',[existing])).toMatchObject({type:'save',record:{id:'occurrence',revision:8,completionDecision:undefined,checklist:[{text:'Libro',done:false}]}});
   expect(template).toEqual(before);
-  expect(()=>completionAction(template,'2026-08-01',[],'all')).toThrow();
- });
- it('resolves a legacy done inconsistency in place, and keep-open reopens that occurrence only',()=>{
-  const legacy=record({status:'done',sourceKey:'completion:template:2026-09-24',checklist:[{text:'Libro',done:false}]});
-  expect(completionAction(legacy,today,[])).toEqual({type:'choose'});
-  expect(completionAction(legacy,today,[],'partial')).toMatchObject({type:'save',record:{id:legacy.id,revision:4,completionDecision:'partial'}});
-  expect(completionAction(legacy,today,[],'keep')).toMatchObject({type:'save',record:{id:legacy.id,status:'open',completionDecision:undefined}});
+  expect(()=>completionAction(template,'2026-08-01',[])).toThrow();
  });
 });
 
@@ -121,10 +105,6 @@ describe('completion integrity at the model boundary',()=>{
   expect(validateRecord({...raw,completionDecision:undefined}).checklist[0].done).toBe(false);
   expect(validateRecord({...raw,completionDecision:'partial'}).completionDecision).toBe('partial');
  });
- it('requires a fresh choice after reopening a previously partial task',()=>{
-  const task=record({status:'open',completionDecision:'partial',checklist:[{text:'Libro',done:false}]});
-  expect(completionAction(task,today,[])).toEqual({type:'choose'});
- });
 });
 
 import {taskEditorContext} from '@/lib/family-mission/attention';
@@ -134,7 +114,7 @@ describe('editing recurring rows',()=>{
   const occurrence=record({id:'occurrence',revision:7,date:'2026-09-25',status:'done',completionDecision:'partial',sourceKey:'completion:task:2026-09-25',checklist:[{text:'Libro',done:true},{text:'Agua',done:false}]});
   expect(taskEditorContext(template,'2026-09-25',[occurrence])).toEqual({record:occurrence,day:'2026-09-25'});
   const context=taskEditorContext(template,'2026-09-26',[occurrence]);
-  expect(completionAction(context.record,context.day,[occurrence],'all')).toMatchObject({type:'save',record:{date:'2026-09-26',sourceKey:'completion:task:2026-09-26'}});
+  expect(completionAction(context.record,context.day,[occurrence])).toMatchObject({type:'save',record:{date:'2026-09-26',sourceKey:'completion:task:2026-09-26'}});
   expect(taskEditorContext(template,'2026-09-25',[{...occurrence,status:'open'}]).record.id).toBe('occurrence');
  });
 });
@@ -173,15 +153,13 @@ it('lists yesterday reopened occurrence overdue independently of today without d
  const yesterday='2026-09-23';
  const template=record({recurrence:'daily',date:'2026-09-01',confirmed:false});
  const legacy=record({id:'yesterday',date:yesterday,status:'done',confirmed:false,sourceKey:`completion:${template.id}:${yesterday}`,checklist:[{text:'Libro',done:false}]});
- const action=completionAction(legacy,yesterday,[template,legacy],'keep');
- if(action.type!=='save')throw new Error('Expected reopen');
- const reopened=action.record;
+ const reopened={...legacy,status:'open' as const,completionDecision:undefined};
  const records=[template,reopened];
  expect(normalTasks(records,today,today).map(r=>r.id)).toEqual(['task','yesterday']);
  expect(attentionReport(records,today).items.find(i=>i.record.id==='yesterday')?.reasons).toEqual(['overdue','unconfirmed']);
  expect(activeDecisions(records,today).map(r=>r.id)).toEqual(['task','yesterday']);
  expect(reminderCandidates(records.map(r=>({...r,confirmed:true})),today).map(r=>r.id)).toEqual(['task','yesterday']);
- const current=completionAction(template,today,records,'all');
+ const current=completionAction(template,today,records);
  if(current.type!=='save')throw new Error('Expected today occurrence');
  expect(current.record).toMatchObject({id:'',revision:0,date:today,sourceKey:`completion:${template.id}:${today}`});
  const completed={...current.record,id:'today',revision:1};

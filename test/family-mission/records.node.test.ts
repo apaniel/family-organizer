@@ -65,28 +65,6 @@ it('updates the same record for each triage action, retains cancelled data and a
  expect((await post({...record,revision:3,status:'open'})).status).toBe(400);
  expect(sqlite.prepare('SELECT COUNT(*) n FROM family_audit').get().n).toBe(4);
 });
-it('persists partial and full occurrence decisions without modifying the recurring template',async()=>{
- const template=await create({recurrence:'daily',checklist:[{text:'Libro',done:false}]});
- async function complete(records:FamilyRecord[],choice:'all'|'partial'){
-  const action=completionAction(template,dateKey(),records,choice);
-  expect(action.type).toBe('save');
-  if(action.type!=='save')throw new Error('Expected save');
-  const response=await post(action.record);expect(response.status).toBe(200);
-  return (await response.json()).record as FamilyRecord;
- }
- const partial=await complete([],'partial');
- expect(partial).toMatchObject({revision:1,completionDecision:'partial',status:'done',checklist:[{text:'Libro',done:false}]});
- const full=await complete([partial],'all');
- expect(full).toMatchObject({id:partial.id,revision:2,completionDecision:'all',checklist:[{text:'Libro',done:true}]});
- const {records}=await (await GET(new NextRequest('http://localhost/api/family/records'))).json();
- expect(records).toHaveLength(2);
- expect(records.find((r:FamilyRecord)=>r.id===template.id)).toMatchObject({revision:1,status:'open',checklist:[{text:'Libro',done:false}]});
-});
-it('rejects contradictory full completion before storage',async()=>{
- const record=await create({checklist:[{text:'Libro',done:false}]});
- expect((await post({...record,status:'done',completionDecision:'all'})).status).toBe(400);
- expect(sqlite.prepare('SELECT COUNT(*) n FROM family_audit').get().n).toBe(1);
-});
 it('preserves authentication for reads and updates',async()=>{
  vi.mocked(requireCalendarSyncRouteAuth).mockResolvedValue({authorized:false} as any);
  expect((await GET(new NextRequest('http://localhost/api/family/records'))).status).toBe(401);
@@ -118,31 +96,31 @@ it('persists two new completed daily tasks as distinct templates before completi
  expect(new Set(records.filter((r:FamilyRecord)=>r.sourceKey).map((r:FamilyRecord)=>r.sourceKey)).size).toBe(2);
  expect(normalTasks(records,addDays(today,1),addDays(today,1)).map(r=>r.title).sort()).toEqual(['Agua','Mochila']);
 });
-it('rejects a refreshed completion decision after cancellation without overwriting its audit',async()=>{
- const template=await create({recurrence:'daily',checklist:[{text:'Libro',done:false}]});
- const action=completionAction(template,dateKey(),[],'partial');
+it('rejects a refreshed completion after cancellation without overwriting its audit',async()=>{
+ const template=await create({recurrence:'daily'});
+ const action=completionAction(template,dateKey(),[]);
  if(action.type!=='save')throw new Error('Expected occurrence');
  const occurrence=(await (await post(action.record)).json()).record as FamilyRecord;
  const snapshot=[template,occurrence];
- expect(completionAction(template,dateKey(),snapshot,'all').type).toBe('save');
+ expect(completionAction(template,dateKey(),snapshot).type).toBe('save');
  const cancelled=(await (await post(triageTask(occurrence,{type:'cancel'}))).json()).record as FamilyRecord;
  const auditsBefore=sqlite.prepare('SELECT * FROM family_audit ORDER BY rowid').all();
- expect(()=>completionAction(template,dateKey(),[template,cancelled],'all',snapshot)).toThrow('ha cambiado');
- expect(()=>completionAction(template,dateKey(),[template,{...occurrence,revision:occurrence.revision+1}],'all',snapshot)).toThrow('ha cambiado');
- const stale=await post({...occurrence,status:'done',completionDecision:'all',checklist:[{text:'Libro',done:true}]});
+ expect(()=>completionAction(template,dateKey(),[template,cancelled],snapshot)).toThrow('ha cambiado');
+ expect(()=>completionAction(template,dateKey(),[template,{...occurrence,revision:occurrence.revision+1}],snapshot)).toThrow('ha cambiado');
+ const stale=await post({...occurrence,status:'done',completionDecision:'all'});
  expect(stale.status).toBe(400);
  const {records}=await (await GET(new NextRequest('http://localhost/api/family/records'))).json();
  expect(records.find((r:FamilyRecord)=>r.id===occurrence.id)).toMatchObject({status:'cancelled',revision:cancelled.revision});
  expect(sqlite.prepare('SELECT * FROM family_audit ORDER BY rowid').all()).toEqual(auditsBefore);
 });
-it('conflicts when an absent occurrence is cancelled while its completion dialog is open',async()=>{
- const template=await create({recurrence:'daily',checklist:[{text:'Libro',done:false}]});
+it('conflicts when an absent occurrence is cancelled before completion',async()=>{
+ const template=await create({recurrence:'daily'});
  const snapshot=[template];
- expect(completionAction(template,dateKey(),snapshot)).toEqual({type:'choose'});
- const pending=completionAction(template,dateKey(),snapshot,'all',snapshot);
+ expect(completionAction(template,dateKey(),snapshot).type).toBe('save');
+ const pending=completionAction(template,dateKey(),snapshot,snapshot);
  if(pending.type!=='save')throw new Error('Expected occurrence');
  const cancelled=(await (await post({...pending.record,status:'cancelled'})).json()).record as FamilyRecord;
- expect(()=>completionAction(template,dateKey(),[template,cancelled],'all',snapshot)).toThrow('ha cambiado');
+ expect(()=>completionAction(template,dateKey(),[template,cancelled],snapshot)).toThrow('ha cambiado');
  const auditsBefore=sqlite.prepare('SELECT * FROM family_audit ORDER BY rowid').all();
  const response=await post(pending.record);
  expect(response.status).toBe(400);
@@ -154,19 +132,17 @@ it('conflicts when an absent occurrence is cancelled while its completion dialog
 it('shows a reopened occurrence rescheduled to a future date independently and preserves its audit',async()=>{
  const past='2026-09-23',future='2026-09-28';
  const template=await create({recurrence:'daily'});
- const action=completionAction(template,past,[template],'all');
+ const action=completionAction(template,past,[template]);
  if(action.type!=='save')throw new Error('Expected occurrence');
  const completed=(await (await post(action.record)).json()).record as FamilyRecord;
- const reopen=completionAction(completed,past,[template,completed],'keep');
- if(reopen.type!=='save')throw new Error('Expected reopen');
- const reopened=(await (await post(reopen.record)).json()).record as FamilyRecord;
+ const reopened=(await (await post({...completed,status:'open',completionDecision:undefined})).json()).record as FamilyRecord;
  const moved=(await (await post(triageTask(reopened,{type:'reschedule',date:future}))).json()).record as FamilyRecord;
  const {records}=await (await GET(new NextRequest('http://localhost/api/family/records'))).json();
  for(const today of ['2026-09-24',future])expect(normalTasks(records,future,today).map(r=>r.id).sort()).toEqual([template.id,moved.id].sort());
  expect(normalTasks(records,'2026-09-24','2026-09-24').map(r=>r.id)).toEqual([template.id]);
  const beforeStale=sqlite.prepare('SELECT * FROM family_audit ORDER BY rowid').all();
  expect(normalTasks(records,past,past).map(r=>r.id)).toContain(template.id);
- expect(()=>completionAction(template,past,records,'all')).toThrow('ha cambiado');
+ expect(()=>completionAction(template,past,records)).toThrow('ha cambiado');
  expect(records.find((r:FamilyRecord)=>r.id===moved.id)).toMatchObject({status:'open',date:future});
  expect(reminderCandidates(records,future).map(r=>r.id)).toContain(moved.id);
  expect(sqlite.prepare('SELECT * FROM family_audit ORDER BY rowid').all()).toEqual(beforeStale);
@@ -176,13 +152,13 @@ it('shows a reopened occurrence rescheduled to a future date independently and p
  expect(JSON.parse(audits[2].before_data).date).toBe(past);
  expect(JSON.parse(audits[2].after_data).date).toBe(future);
 });
-it.each(['all','partial'] as const)('conflicts on %s when the recurring template changes while the dialog is open',async(choice)=>{
- const template=await create({recurrence:'daily',checklist:[{text:'Libro',done:false}]});
+it('conflicts when the recurring template changes before completion',async()=>{
+ const template=await create({recurrence:'daily'});
  const snapshot=[template];
- expect(completionAction(template,dateKey(),snapshot)).toEqual({type:'choose'});
+ expect(completionAction(template,dateKey(),snapshot).type).toBe('save');
  for(const status of ['open','cancelled'] as const){
   const current={...template,revision:2,status};
-  expect(()=>completionAction(template,dateKey(),[current],choice,snapshot)).toThrow('Esta tarea ha cambiado. Actualiza la página y vuelve a abrir la decisión.');
+  expect(()=>completionAction(template,dateKey(),[current],snapshot)).toThrow('Esta tarea ha cambiado. Actualiza la página y vuelve a abrir la decisión.');
  }
  const {records}=await (await GET(new NextRequest('http://localhost/api/family/records'))).json();
  expect(records).toHaveLength(1);
@@ -191,8 +167,8 @@ it.each(['all','partial'] as const)('conflicts on %s when the recurring template
 });
 
 it.each(['update','cancel','delete'] as const)('rejects a stale occurrence insert after another client performs parent %s',async change=>{
- const template=await create({recurrence:'daily',checklist:[{text:'Libro',done:false}]});
- const pending=completionAction(template,dateKey(),[template],'partial');
+ const template=await create({recurrence:'daily'});
+ const pending=completionAction(template,dateKey(),[template]);
  if(pending.type!=='save')throw new Error('Expected occurrence');
  if(change==='delete')sqlite.prepare('DELETE FROM family_records WHERE id=?').run(template.id);
  else expect((await post({...template,title:'Updated by B',status:change==='cancel'?'cancelled':'open'})).status).toBe(200);
@@ -206,7 +182,7 @@ it.each(['update','cancel','delete'] as const)('rejects a stale occurrence inser
 });
 it('carries validated parent identity/revision and inserts one audited occurrence for an unchanged parent',async()=>{
  const template=await create({recurrence:'daily'});
- const pending=completionAction(template,dateKey(),[template],'all');
+ const pending=completionAction(template,dateKey(),[template]);
  if(pending.type!=='save')throw new Error('Expected occurrence');
  expect(pending.record).toMatchObject({completionParent:{id:template.id,revision:1}});
  const response=await post(pending.record);
@@ -218,7 +194,7 @@ it('carries validated parent identity/revision and inserts one audited occurrenc
 });
 it.each([undefined,{id:'other',revision:1},{id:'PARENT',revision:0},{id:'PARENT',revision:'1'},{id:'PARENT',revision:1.5}])('rejects missing or malformed completion parent metadata %j',async metadata=>{
  const template=await create({recurrence:'daily'});
- const pending=completionAction(template,dateKey(),[template],'all');
+ const pending=completionAction(template,dateKey(),[template]);
  if(pending.type!=='save')throw new Error('Expected occurrence');
  const completionParent=metadata&&{...metadata,id:metadata.id==='PARENT'?template.id:metadata.id};
  expect((await post({...pending.record,completionParent})).status).toBe(400);
@@ -235,7 +211,7 @@ it('reads and updates historical completion records without parent metadata',asy
 
 it('checks D1 parent state at insertion even if cancellation happens immediately before the batch',async()=>{
  const template=await create({recurrence:'daily'});
- const pending=completionAction(template,dateKey(),[template],'all');
+ const pending=completionAction(template,dateKey(),[template]);
  if(pending.type!=='save')throw new Error('Expected occurrence');
  beforeBatch=()=>sqlite.prepare("UPDATE family_records SET revision=2,data=json_set(data,'$.status','cancelled') WHERE id=?").run(template.id);
  const response=await post(pending.record);
@@ -307,38 +283,7 @@ it.each(['update','cancel','delete'] as const)('rejects conversion with no parti
  expect(sqlite.prepare('SELECT COUNT(*) n FROM family_audit').get().n).toBe(1);
 });
 
-it.each([false,true])('completes the checklist only on the occurrence (conversion: %s)',async existing=>{
- const draft={kind:'task',title:'Mochila',date:'2026-09-25',checklist:[{text:'Libro',done:false}]};
- const original=existing?await create(draft):draft;
- const response=await post({...original,recurrence:'daily',status:'done',completeOn:draft.date,completeChoice:'all'});
- expect(response.status).toBe(200);
- const {records}=await response.json();
- expect(records[0]).toMatchObject({status:'open',checklist:[{done:false}]});
- expect(records[1]).toMatchObject({status:'done',completionDecision:'all',checklist:[{done:true}]});
-});
 
-it.each(['all','partial','keep'] as const)('resolves the actual legacy completed recurring template with %s',async choice=>{
- const legacy=await create({recurrence:'weekly',status:'done',checklist:[{text:'Libro',done:false}]});
- // Today is not this template's occurrence date; the health alert concerns the template itself.
- const other=await create({sourceKey:`completion:${legacy.id}:2026-09-01`,recurrence:'none',status:'open',completionParent:{id:legacy.id,revision:legacy.revision}});
- const records=[legacy,other];
- expect(attentionReport(records,'2026-09-24').health.incomplete).toBe(1);
- expect(completionAction(legacy,'2026-09-24',records)).toEqual({type:'choose'});
- const action=completionAction(legacy,'2026-09-24',records,choice,structuredClone(records));
- expect(action.type).toBe('save');
- if(action.type!=='save')throw new Error('Expected legacy update');
- expect(action.record).toMatchObject({id:legacy.id,revision:legacy.revision,recurrence:'weekly',sourceKey:legacy.sourceKey});
- const response=await post(action.record);
- expect(response.status).toBe(200);
- const loaded=await (await GET(new NextRequest('http://localhost/api/family/records'))).json();
- expect(loaded.records).toHaveLength(2);
- const resolved=loaded.records.find((r:FamilyRecord)=>r.id===legacy.id);
- expect(resolved).toMatchObject({status:choice==='keep'?'open':'done',checklist:[{done:choice==='all'}],revision:2});
- expect(resolved.completionDecision).toBe(choice==='keep'?undefined:choice);
- expect(loaded.records.find((r:FamilyRecord)=>r.id===other.id)).toMatchObject(other);
- expect(attentionReport(loaded.records,'2026-09-24').health.incomplete).toBe(0);
- expect(sqlite.prepare('SELECT record_id FROM family_audit ORDER BY rowid').all().map((r:any)=>r.record_id)).toEqual([legacy.id,other.id,legacy.id]);
-});
 
 it('records trusted browser provenance only on the transition into done',async()=>{
  const record=await create();
@@ -382,7 +327,7 @@ it.each(['occurrence','new-recurring','conversion','create-done'])('audits compl
  let response:Response;
  if(path==='occurrence'){
   const template=await create({recurrence:'daily'});
-  const action=completionAction(template,'2026-09-25',[template],'all');
+  const action=completionAction(template,'2026-09-25',[template]);
   if(action.type!=='save')throw new Error('Expected occurrence');
   response=await post(action.record);
  }else if(path==='create-done'){
@@ -524,4 +469,13 @@ it('ignores service-looking headers on authenticated browser completion',async()
  const response=await POST(new NextRequest('http://localhost/api/family/records',{method:'POST',headers:{'x-family-completion-mode':'inferred','x-family-completion-channel':'email'},body:JSON.stringify({...original,status:'done'})}));
  expect(response.status).toBe(200);
  expect(sqlite.prepare('SELECT completion_mode,completion_channel FROM family_audit ORDER BY id DESC LIMIT 1').get()).toEqual({completion_mode:'explicit',completion_channel:'dashboard'});
+});
+it('rejects nonempty task checklists on create, update and recurring completion',async()=>{
+ const original=await create();
+ for(const raw of [{kind:'task',title:'Nueva',date:dateKey()},{...original},{...original,recurrence:'daily',status:'done',completeOn:dateKey()}]){
+  const response=await post({...raw,checklist:[{text:'Acción separada',done:false}]});
+  expect(response.status).toBe(400);
+  expect((await response.json()).error).toMatch(/tarea.*separada/i);
+ }
+ expect(sqlite.prepare('SELECT COUNT(*) n FROM family_audit').get().n).toBe(1);
 });

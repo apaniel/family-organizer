@@ -34,6 +34,11 @@ export function calendarDayStyle(records:FamilyRecord[]) {
  return {backgroundImage:`linear-gradient(to right, ${topStops.join(', ')}), linear-gradient(to right, ${stops.join(', ')})`,backgroundSize:'100% 4px, 100% 100%',backgroundPosition:'top left, top left',backgroundRepeat:'no-repeat'};
 }
 export function addDays(day: string, count: number) { const d = new Date(day+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+count); return d.toISOString().slice(0,10); }
+export function taskAgeLabel(taskDate:string,today:string) {
+ const days=Math.floor((Date.parse(today+'T00:00:00Z')-Date.parse(taskDate+'T00:00:00Z'))/86400000);
+ if(days<=0)return '';
+ return days===1?'Desde ayer':`Desde hace ${days} días`;
+}
 export function occursOn(r: FamilyRecord, day: string) {
  if (day < r.date) return false;
  if (r.recurrence === 'daily') return true;

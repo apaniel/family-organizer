@@ -5,7 +5,7 @@ import {CalendarDays,Check,ChevronLeft,ChevronRight,Plus,Sun,Utensils,ArrowUpRig
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {Checkbox} from '@/components/ui/checkbox';
-import {dateKey,addDays,occursOn,calendarEventStyle,calendarDayStyle,isCalendarDayBlock,calendarTimeLabel,type FamilyRecord,type Kind} from '@/lib/family-mission/model';
+import {dateKey,addDays,occursOn,calendarEventStyle,calendarDayStyle,isCalendarDayBlock,calendarTimeLabel,taskAgeLabel,type FamilyRecord,type Kind} from '@/lib/family-mission/model';
 import './mission.css';
 import DailyDigest from './DailyDigest';
 import ActivityPlans from './ActivityPlans';
@@ -61,9 +61,9 @@ function Board({view}:{view:'today'|'calendar'|'week'}){
  const days=Array.from({length:7},(_,i)=>addDays(weekStart(day),i));const done=tasks(day).filter(r=>completed(r,day)).length;const pending=tasks(day).length-done;
  const monthStart=day.slice(0,7)+'-01';const gridStart=weekStart(monthStart);const monthDays=Array.from({length:42},(_,i)=>addDays(gridStart,i));
  const waiting=activeWaiting(records,today);const decisions=activeDecisions(records,today);
- function taskRow(r:FamilyRecord,d:string){const isDone=completed(r,d);return <div className={'mc-task '+(isDone?'is-done':'')} key={r.id}>
+ function taskRow(r:FamilyRecord,d:string){const isDone=completed(r,d);const age=d===today&&r.recurrence==='none'&&!isDone?taskAgeLabel(r.date,today):'';return <div className={'mc-task '+(isDone?'is-done':'')} key={r.id}>
  <Checkbox checked={isDone} disabled={busy||r.recurrence!=='none'&&isDone} aria-label={(isDone?'Reabrir ':'Completar ')+r.title} onCheckedChange={()=>void toggleTask(r,d)}/>
- <button className="mc-task-body" onClick={()=>open(r,d)}><strong>{r.title}</strong><span>{r.time&&`${r.time} · `}{r.date<today&&r.recurrence==='none'&&!isDone?'Pendiente · ':''}{r.owner}</span>{r.notes&&<p>{r.notes.slice(0,110)}</p>}</button>
+ <button className="mc-task-body" onClick={()=>open(r,d)}><strong>{r.title}</strong><span>{r.time&&`${r.time} · `}{r.owner}</span>{age&&<small className={'mc-task-age '+(r.date<addDays(today,-2)?'is-old':'')}>{age}</small>}{r.notes&&<p>{r.notes.slice(0,110)}</p>}</button>
  <span className={'mc-avatar '+(r.owner==='Cris'?'rose':r.owner==='Saida'?'gold':'')}>{r.owner.slice(0,1)}</span></div>;}
  function eventRow(r:FamilyRecord){return <button className={'mc-event '+r.category} style={{borderLeftColor:calendarEventStyle(r)?.backgroundColor||'#597bdc'}} key={r.id} onClick={()=>open(r)}><span className="mc-event-time">{calendarTimeLabel(r)}</span><div><strong>{r.title}</strong><span>{categories[r.category]||'Google Calendar'}{!r.confirmed?' · Por confirmar':''}</span></div><ArrowUpRight size={16}/></button>;}
  const empty=(text:string)=><div className="mc-empty"><CheckCheck size={24}/><p>{text}</p></div>;

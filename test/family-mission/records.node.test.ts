@@ -5,6 +5,7 @@ import {NextRequest} from 'next/server';
 import {getCloudflareContext} from '@opennextjs/cloudflare';
 import {requireCalendarSyncRouteAuth} from '@/lib/calendar-sync-auth';
 import {GET,POST} from '@/app/api/family/records/route';
+import {readCompletionDigest} from '@/lib/family-mission/completion-digest-store';
 import {attentionReport,completionAction,triageTask,normalTasks} from '@/lib/family-mission/attention';
 import {dateKey,addDays,validateRecord,reminderCandidates,type FamilyRecord} from '@/lib/family-mission/model';
 vi.mock('server-only',()=>({}));
@@ -12,17 +13,20 @@ vi.mock('@opennextjs/cloudflare',()=>({getCloudflareContext:vi.fn()}));
 vi.mock('@/lib/calendar-sync-auth',()=>({requireCalendarSyncRouteAuth:vi.fn()}));
 const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
 let sqlite:any;
+let executedQueries:{sql:string;args:any[]}[];
 let beforeBatch:(()=>void)|undefined;
 beforeEach(()=>{
  beforeBatch=undefined;
+ executedQueries=[];
  sqlite=new DatabaseSync(':memory:');
  sqlite.exec(readFileSync(new URL('../../migrations/0001_family_mission.sql',import.meta.url),'utf8'));
+ sqlite.exec(readFileSync(new URL('../../migrations/0006_completion_provenance.sql',import.meta.url),'utf8'));
  const db={
   prepare(sql:string){
    const statement=sqlite.prepare(sql);let args:any[]=[];
    const bound={bind(...values:any[]){args=values;return bound;},
     async first(){return statement.get(...args)??null;},
-    async all(){return {results:statement.all(...args)};},
+    async all(){executedQueries.push({sql,args:[...args]});return {results:statement.all(...args)};},
     async run(){return {meta:{changes:statement.run(...args).changes}};}
    };return bound;
   },
@@ -34,7 +38,7 @@ beforeEach(()=>{
   }
  };
  vi.mocked(getCloudflareContext).mockResolvedValue({env:{FAMILY_DB:db}} as any);
- vi.mocked(requireCalendarSyncRouteAuth).mockResolvedValue({authorized:true} as any);
+ vi.mocked(requireCalendarSyncRouteAuth).mockResolvedValue({authorized:true,kind:'email'} as any);
 });
 afterEach(()=>sqlite.close());
 const post=(value:unknown)=>POST(new NextRequest('http://localhost/api/family/records',{method:'POST',body:JSON.stringify(value)}));
@@ -334,4 +338,190 @@ it.each(['all','partial','keep'] as const)('resolves the actual legacy completed
  expect(loaded.records.find((r:FamilyRecord)=>r.id===other.id)).toMatchObject(other);
  expect(attentionReport(loaded.records,'2026-09-24').health.incomplete).toBe(0);
  expect(sqlite.prepare('SELECT record_id FROM family_audit ORDER BY rowid').all().map((r:any)=>r.record_id)).toEqual([legacy.id,other.id,legacy.id]);
+});
+
+it('records trusted browser provenance only on the transition into done',async()=>{
+ const record=await create();
+ vi.mocked(requireCalendarSyncRouteAuth).mockClear();
+ const response=await post({...record,status:'done',completion_mode:'inferred',completion_channel:'email'});
+ expect(response.status).toBe(200);
+ expect(requireCalendarSyncRouteAuth).toHaveBeenCalledTimes(1);
+ const done=(await response.json()).record;
+ await post({...done,title:'Updated title'});
+ expect(sqlite.prepare('SELECT completion_mode,completion_channel FROM family_audit ORDER BY id').all()).toEqual([
+  {completion_mode:null,completion_channel:null},
+  {completion_mode:'explicit',completion_channel:'dashboard'},
+  {completion_mode:null,completion_channel:null}
+ ]);
+});
+
+it.each([
+ ['explicit','whatsapp','explicit','whatsapp'],
+ ['inferred','email','inferred','email'],
+ ['explicit','telegram','explicit','telegram'],
+ [null,null,'inferred','other'],
+ ['EXPLICIT','whatsapp','inferred','other'],
+ ['explicit','dashboard','inferred','other'],
+ ['explicit',null,'inferred','other'],
+ [null,'email','inferred','other'],
+ ['explicit, inferred','email','inferred','other']
+])('uses strict trusted service headers %s/%s',async(mode,channel,expectedMode,expectedChannel)=>{
+ const record=await create();
+ vi.mocked(requireCalendarSyncRouteAuth).mockResolvedValue({authorized:true,kind:'service'});
+ vi.mocked(requireCalendarSyncRouteAuth).mockClear();
+ const headers=new Headers();
+ if(mode)headers.set('x-family-completion-mode',mode);
+ if(channel)headers.set('x-family-completion-channel',channel);
+ const response=await POST(new NextRequest('http://localhost/api/family/records',{method:'POST',headers,body:JSON.stringify({...record,status:'done',completionMode:'explicit',completionChannel:'dashboard'})}));
+ expect(response.status).toBe(200);
+ expect(requireCalendarSyncRouteAuth).toHaveBeenCalledTimes(1);
+ expect(sqlite.prepare('SELECT completion_mode,completion_channel FROM family_audit ORDER BY id DESC LIMIT 1').get()).toEqual({completion_mode:expectedMode,completion_channel:expectedChannel});
+});
+
+it.each(['occurrence','new-recurring','conversion','create-done'])('audits completion provenance for %s and no open template',async path=>{
+ let response:Response;
+ if(path==='occurrence'){
+  const template=await create({recurrence:'daily'});
+  const action=completionAction(template,'2026-09-25',[template],'all');
+  if(action.type!=='save')throw new Error('Expected occurrence');
+  response=await post(action.record);
+ }else if(path==='create-done'){
+  response=await post({kind:'task',title:'Done',date:'2026-09-25',status:'done'});
+ }else {
+  const original=path==='conversion'?await create():{kind:'task',title:'Daily'};
+  response=await post({...original,date:'2026-09-25',status:'done',recurrence:'daily',completeOn:'2026-09-25'});
+ }
+ expect(response.status).toBe(200);
+ const audits=sqlite.prepare('SELECT * FROM family_audit ORDER BY id').all();
+ const completed=audits.filter((a:any)=>a.completion_mode!==null);
+ expect(completed).toHaveLength(1);
+ expect(completed[0]).toMatchObject({completion_mode:'explicit',completion_channel:'dashboard'});
+ expect(JSON.parse(completed[0].after_data).status).toBe('done');
+ expect(audits.filter((a:any)=>a.completion_mode===null).every((a:any)=>JSON.parse(a.after_data).status==='open')).toBe(true);
+});
+
+const digest=async(date='2026-09-25')=>{
+ const {GET}=await import('@/app/api/family/completion-digest/route');
+ return GET(new NextRequest('http://localhost/api/family/completion-digest'+(date?'?date='+date:'')));
+};
+it('returns only completion transitions, with stable snapshot fields and safe historical provenance',async()=>{
+ vi.useFakeTimers();
+ try{
+  vi.setSystemTime(new Date('2026-09-25T10:00:00Z'));
+  const open=await create();
+  const done=(await (await post({...open,status:'done'})).json()).record;
+  await post({...done,title:'Later edit',owner:'Cris'});
+  const {DELETE}=await import('@/app/api/family/records/route');
+  await DELETE(new NextRequest('http://localhost/api/family/records',{method:'DELETE',body:JSON.stringify({id:done.id,revision:3})}));
+  vi.mocked(requireCalendarSyncRouteAuth).mockResolvedValue({authorized:true,kind:'service'});
+  const inferred=await create({sourceKey:'mail:2',status:'done'});
+  // Legacy rows remain intact and are classified conservatively, never as explicit.
+  sqlite.prepare('UPDATE family_audit SET completion_mode=NULL,completion_channel=NULL WHERE record_id=?').run(inferred.id);
+  await create({kind:'event',sourceKey:'event:1',status:'done'});
+  const response=await digest();
+  expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toBe('no-store');
+  const body=await response.json();
+  expect(body).toEqual({date:'2026-09-25',explicit:[{id:done.id,title:'Mochila',owner:'Dani',completedAt:'2026-09-25T10:00:00.000Z',channel:'dashboard'}],inferred:[{id:inferred.id,title:'Mochila',owner:'Dani',completedAt:'2026-09-25T10:00:00.000Z',channel:'other'}]});
+  expect(await (await digest()).json()).toEqual(body);
+ }finally{vi.useRealTimers();}
+});
+
+it('filters historical and attributed duplicate done updates using SQLite NULL-safe transitions',async()=>{
+ const done={kind:'task',status:'done',title:'Snapshot',owner:'Dani'};
+ const insert=sqlite.prepare('INSERT INTO family_audit(record_id,action,before_data,after_data,occurred_at,completion_mode,completion_channel) VALUES(?,?,?,?,?,?,?)');
+ const cases:[string,unknown,string|null][]=[
+  ['already-done',done,null],
+  ['attributed-already-done',done,'explicit'],
+  ['open',{...done,status:'open'},null],
+  ['missing-status',{kind:'task'},null],
+  ['null-status',{kind:'task',status:null},null],
+  ['missing-kind',{status:'done'},null],
+  ['missing-before',null,null],
+  ['event-to-task',{...done,kind:'event'},null]
+ ];
+ for(const [id,before,mode] of cases){
+  insert.run(id,'update',before===null?null:JSON.stringify(before),JSON.stringify(done),'2026-09-25T10:00:00.000Z',mode,mode?'dashboard':null);
+ }
+ const result=await readCompletionDigest('2026-09-25');
+ expect(result.explicit).toEqual([]);
+ expect(result.inferred.map(record=>record.id).sort()).toEqual(cases.slice(2).map(([id])=>id).sort());
+});
+
+it.each([
+ ['2026-03-29','2026-03-28T23:00:00.000Z','2026-03-29T22:00:00.000Z'],
+ ['2026-10-25','2026-10-24T22:00:00.000Z','2026-10-25T23:00:00.000Z']
+])('uses the full Madrid DST day %s with exclusive next midnight',async(day,start,end)=>{
+ vi.useFakeTimers();
+ try{
+  const ids:string[]=[];
+  for(const [i,stamp] of Array.from([Date.parse(start)-1,Date.parse(start),Date.parse(end)-1,Date.parse(end)].entries())){
+   vi.setSystemTime(stamp);
+   const record=await create({status:'done',sourceKey:'boundary:'+i});
+   if(i===1||i===2)ids.push(record.id);
+  }
+  // Import the production function and execute its SQL with actual SQLite binds.
+  const result=await readCompletionDigest(day);
+  expect(executedQueries.filter(query=>query.sql.includes('FROM family_audit'))).toEqual([
+   {sql:expect.stringContaining('occurred_at>=? AND occurred_at<?'),args:[start,end]}
+  ]);
+  expect(result.explicit.map(r=>r.id)).toEqual(ids);
+  expect(result.inferred).toEqual([]);
+  const response=await digest(day);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(result);
+ }finally{vi.useRealTimers();}
+});
+it.each(['','2026-02-30','2026-13-01','2026-2-01','bad','2026-09-25T00:00:00Z'])('rejects invalid digest date %s before storage',async date=>{
+ vi.mocked(getCloudflareContext).mockClear();
+ expect((await digest(date)).status).toBe(400);
+ expect(getCloudflareContext).not.toHaveBeenCalled();
+});
+it('authenticates the digest once before accessing storage or validating date',async()=>{
+ vi.mocked(requireCalendarSyncRouteAuth).mockResolvedValue({authorized:false,kind:'email'});
+ vi.mocked(requireCalendarSyncRouteAuth).mockClear();
+ vi.mocked(getCloudflareContext).mockClear();
+ expect((await digest('bad')).status).toBe(401);
+ expect(requireCalendarSyncRouteAuth).toHaveBeenCalledTimes(1);
+ expect(getCloudflareContext).not.toHaveBeenCalled();
+});
+
+it('preserves old audit rows on migration and constrains provenance values',()=>{
+ const legacy=new DatabaseSync(':memory:');
+ try{
+  legacy.exec(readFileSync(new URL('../../migrations/0001_family_mission.sql',import.meta.url),'utf8'));
+  legacy.prepare('INSERT INTO family_audit(record_id,action,after_data,occurred_at) VALUES(?,?,?,?)').run('old','create','{"private":"unchanged"}','2026-09-25T00:00:00.000Z');
+  const before=legacy.prepare('SELECT * FROM family_audit').get();
+  legacy.exec(readFileSync(new URL('../../migrations/0006_completion_provenance.sql',import.meta.url),'utf8'));
+  expect(legacy.prepare('SELECT * FROM family_audit').get()).toEqual({...before,completion_mode:null,completion_channel:null});
+  expect(()=>legacy.exec("UPDATE family_audit SET completion_mode='guessed'")).toThrow();
+  expect(()=>legacy.exec("UPDATE family_audit SET completion_channel='sms'")).toThrow();
+ }finally{legacy.close();}
+});
+it('carries service provenance through atomic recurrence into the digest and counts re-completion separately',async()=>{
+ vi.useFakeTimers();
+ try{
+  vi.setSystemTime(new Date('2026-09-25T12:00:00Z'));
+  vi.mocked(requireCalendarSyncRouteAuth).mockResolvedValue({authorized:true,kind:'service'});
+  const response=await POST(new NextRequest('http://localhost/api/family/records',{method:'POST',headers:{'x-family-completion-mode':'explicit','x-family-completion-channel':'whatsapp'},body:JSON.stringify({kind:'task',title:'Daily',owner:'Dani',date:'2026-09-25',recurrence:'daily',status:'done',completeOn:'2026-09-25'})}));
+  expect(response.status).toBe(200);
+  const {records}=await response.json();
+  const occurrence=records[1];
+  let body=await (await digest()).json();
+  expect(body.explicit).toEqual([{id:occurrence.id,title:'Daily',owner:'Dani',completedAt:'2026-09-25T12:00:00.000Z',channel:'whatsapp'}]);
+  expect(body.inferred).toEqual([]);
+  const reopened=(await (await post({...occurrence,status:'open',completionDecision:undefined})).json()).record;
+  vi.setSystemTime(new Date('2026-09-25T13:00:00Z'));
+  const completed=await POST(new NextRequest('http://localhost/api/family/records',{method:'POST',headers:{'x-family-completion-mode':'inferred','x-family-completion-channel':'email'},body:JSON.stringify({...reopened,status:'done'})}));
+  expect(completed.status).toBe(200);
+  body=await (await digest()).json();
+  expect(body.explicit).toHaveLength(1);
+  expect(body.inferred).toEqual([{id:occurrence.id,title:'Daily',owner:'Dani',completedAt:'2026-09-25T13:00:00.000Z',channel:'email'}]);
+ }finally{vi.useRealTimers();}
+});
+it('ignores service-looking headers on authenticated browser completion',async()=>{
+ const original=await create();
+ const response=await POST(new NextRequest('http://localhost/api/family/records',{method:'POST',headers:{'x-family-completion-mode':'inferred','x-family-completion-channel':'email'},body:JSON.stringify({...original,status:'done'})}));
+ expect(response.status).toBe(200);
+ expect(sqlite.prepare('SELECT completion_mode,completion_channel FROM family_audit ORDER BY id DESC LIMIT 1').get()).toEqual({completion_mode:'explicit',completion_channel:'dashboard'});
 });

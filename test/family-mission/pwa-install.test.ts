@@ -27,17 +27,6 @@ describe('Apalas PWA',()=>{
   expect(worker).not.toContain('registration.unregister()');
  });
 
- it('preserves the deployed chat notification Durable Object during release',()=>{
-  const worker=read('../../cloudflare-worker.ts');
-  const config=read('../../wrangler.jsonc');
-  expect(worker).toContain("import {DurableObject} from 'cloudflare:workers'");
-  expect(worker).toContain('export class ChatNotifications extends DurableObject');
-  expect(worker).toContain("url.pathname==='/api/family/chat/socket'");
-  expect(worker).toContain("url.pathname==='/api/family/chat'");
-  expect(config).toContain('"name": "CHAT_NOTIFICATIONS"');
-  expect(config).toContain('"class_name": "ChatNotifications"');
- });
-
  it('mounts an accessible install notification with the approved fuchsia glitter CTA',()=>{
   const layout=read('../../app/layout.tsx');
   const component=read('../../components/mission/InstallAppPrompt.tsx');

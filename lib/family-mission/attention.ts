@@ -16,6 +16,15 @@ function activeOnwards(r:FamilyRecord,records:FamilyRecord[],today:string){
 export function normalTasks(records:FamilyRecord[],day:string,today:string){
  return records.filter(r=>r.kind==='task'&&r.status!=='cancelled'&&!cancelledOccurrence(r,records,day)&&!activeOccurrence(r,records,day)&&(!isOccurrence(r)||(isActive(r)&&r.date===day)||(day===today&&isPastOpenOccurrence(r,today)))&&(occursOn(r,day)||(day===today&&isOverdue(r,today))));
 }
+// Today carries unfinished one-off work to the selected day without changing stored dates.
+// Keep occurrence replacement/cancellation rules shared with the dated planning list.
+export function pendingTasks(records:FamilyRecord[],day:string){
+ const seen=new Set<string>();
+ return normalTasks(records,day,day).filter(r=>{
+  if(isCompleted(r,records,day)||seen.has(r.id))return false;
+  seen.add(r.id);return true;
+ });
+}
 export function activeWaiting(records:FamilyRecord[],today:string){return records.filter(r=>r.kind==='task'&&r.status==='waiting'&&activeOnwards(r,records,today));}
 export function activeDecisions(records:FamilyRecord[],today:string){return records.filter(r=>!r.confirmed&&activeOnwards(r,records,today));}
 export function attentionReport(records:FamilyRecord[],today:string){

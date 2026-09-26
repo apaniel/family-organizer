@@ -1,4 +1,5 @@
 import 'server-only';
+import {isInternalRecord} from './record-namespaces';
 import {getCloudflareContext} from '@opennextjs/cloudflare';
 import {validateRecord,type FamilyRecord} from './model';
 
@@ -7,15 +8,15 @@ export class FlattenConflict extends Error {
  constructor(){super('Esta tarea ha cambiado. Vuelve a obtener una vista previa.');}
 }
 const invalid=(message='Solicitud de migración no válida.')=>new FlattenInputError(message);
-const protectedKey=(key:string)=>/^(approval|capability|chat-conversation|chat-thread|system|internal):/.test(key);
 export async function flattenRecord(raw:any){
+ if(isInternalRecord(raw))throw invalid('Este registro pertenece a un espacio reservado.');
  if(!raw||typeof raw.id!=='string'||!raw.id.trim()||raw.id.length>200||!Number.isSafeInteger(raw.revision)||raw.revision<1||typeof raw.confirm!=='boolean'||typeof raw.localToday!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(raw.localToday)||!Number.isFinite(Date.parse(raw.localToday))||new Date(raw.localToday+'T12:00:00Z').toISOString().slice(0,10)!==raw.localToday)throw invalid();
  const {env}=await getCloudflareContext({async:true});
  const db=(env as any).FAMILY_DB;
  const old=await db.prepare('SELECT * FROM family_records WHERE id=?').bind(raw.id).first();
  if(!old||old.revision!==raw.revision)throw new FlattenConflict();
  const original:FamilyRecord={...JSON.parse(old.data),id:old.id,revision:old.revision,updatedAt:old.updated_at};
- if(old.kind!=='task'||original.kind!=='task'||original.readOnly||protectedKey(old.source_key||'')||protectedKey(original.sourceKey||'')||!Array.isArray(original.checklist)||!original.checklist.length)throw invalid('Esta tarea no admite migración de lista.');
+ if(old.kind!=='task'||original.kind!=='task'||original.readOnly||isInternalRecord(old)||isInternalRecord(original)||!Array.isArray(original.checklist)||!original.checklist.length)throw invalid('Esta tarea no admite migración de lista.');
  const children:FamilyRecord[]=[];
  const history:string[]=[];
  let checked=0;

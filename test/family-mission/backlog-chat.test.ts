@@ -9,3 +9,9 @@ describe('Ideas para Rufus',()=>{
   expect(component).toContain('<FamilyChat/>');
  });
 });
+
+it('links Regalos with a Gift icon from both dashboard navigation shells',()=>{
+ expect(component).toMatch(/href="\/gifts"><Gift[^>]*\/>Regalos/);
+ const dashboard=readFileSync(new URL('../../components/mission/MissionControl.tsx',import.meta.url),'utf8');
+ expect(dashboard).toContain("['/gifts',Gift,'Regalos'");
+});

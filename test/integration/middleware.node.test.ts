@@ -14,3 +14,8 @@ describe('email-only family access',()=>{
  it('keeps the Hermes service working',async()=>{expect((await requireCalendarSyncRouteAuth(new NextRequest('https://apalas.apaniel.dev/api/family/records',{headers:{'x-calendar-sync-secret':'test-service'}}))).authorized).toBe(true);});
  it('does not accept old parent tokens or cookies for data access',async()=>{expect((await requireCalendarSyncRouteAuth(new NextRequest('https://apalas.apaniel.dev/api/family/records',{headers:{cookie:'family_device_auth=true','x-instant-auth-token':'old-token'}}))).authorized).toBe(false);});
 });
+
+it('allows /gifts only for verified parents',async()=>{
+ vi.mocked(isVerifiedFamilyParent).mockResolvedValue(false);expect((await middleware(new NextRequest('https://apalas.test/gifts'))).status).toBe(403);
+ vi.mocked(isVerifiedFamilyParent).mockResolvedValue(true);expect((await middleware(new NextRequest('https://apalas.test/gifts'))).headers.get('x-middleware-next')).toBe('1');
+});

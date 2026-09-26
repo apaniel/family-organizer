@@ -1,25 +1,25 @@
 // @vitest-environment jsdom
 import {it,expect,vi} from 'vitest';
-import {render,screen,within,waitFor} from '@testing-library/react';
+import {act,render,screen,within,waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import MissionControl from '@/components/mission/MissionControl';
 import {dateKey,validateRecord} from '@/lib/family-mission/model';
-vi.mock('@/components/mission/DailyDigest',()=>({default:()=>null}));
 vi.mock('@/components/mission/ActivityPlans',()=>({default:()=>null}));
 vi.mock('@/components/mission/FamilyChat',()=>({default:()=>null}));
 vi.mock('@/components/mission/DashboardLive',()=>({default:()=>null}));
 vi.mock('@/components/mission/ApprovalTray',()=>({default:()=>null}));
-it('assigns an unassigned event through Asignar and the existing editor save path',async()=>{
+it('assigns an unassigned event through the daily digest and the existing editor save path',async()=>{
  vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
  const user=userEvent.setup();
  const event={...validateRecord({kind:'event',title:'Visita ficticia',date:dateKey(),owner:'Sin asignar',confirmed:true}),id:'event',revision:2};
  const request=vi.fn(async(url:string,init?:RequestInit)=>{
   if(init?.method==='POST')return {ok:true,json:async()=>({record:{...JSON.parse(String(init.body)),revision:3}})};
-  return {ok:true,json:async()=>url.includes('/calendar')?{events:[]}:{records:[event]}};
+  return {ok:true,json:async()=>url.includes('/calendar')?{events:[]}:url.includes('/digest')?{items:[]}:{records:[event]}};
  });
  vi.stubGlobal('fetch',request);
- render(<MissionControl view="today"/>);
- await user.click(await screen.findByRole('button',{name:'Asignar'}));
+ await act(async()=>{render(<MissionControl view="today"/>);});
+ await screen.findByRole('heading',{name:'Resumen del día'});
+ await user.click(await screen.findByRole('button',{name:/Visita ficticia/}));
  const dialog=within(screen.getByRole('dialog',{name:'Editar plan'}));
  expect(dialog.getByLabelText('Hasta el día')).toBeVisible();
  expect(dialog.queryByLabelText('Estado')).toBeNull();
@@ -38,8 +38,8 @@ it('shows binary tasks without checklist controls, progress or incomplete warnin
  vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
  const user=userEvent.setup();
  const task={...validateRecord({kind:'task',title:'Tarea binaria',owner:'Cris',date:dateKey(),checklist:[{text:'Paso antiguo',done:false}]}),id:'binary',revision:1};
- vi.stubGlobal('fetch',vi.fn(async(url:string)=>({ok:true,json:async()=>url.includes('/calendar')?{events:[]}:{records:[task,{...task,id:'done',title:'Hecha antigua',status:'done'}]}})));
- render(<MissionControl view="today"/>);
+ vi.stubGlobal('fetch',vi.fn(async(url:string)=>({ok:true,json:async()=>url.includes('/calendar')?{events:[]}:url.includes('/digest')?{items:[]}:{records:[task,{...task,id:'done',title:'Hecha antigua',status:'done'}]}})));
+ await act(async()=>{render(<MissionControl view="today"/>);});
  await user.click(await screen.findByRole('button',{name:/^Tarea binaria/}));
  expect(screen.queryByText('Lista de preparación')).toBeNull();
  expect(screen.queryByRole('button',{name:'Añadir elemento'})).toBeNull();
@@ -51,9 +51,9 @@ it('completes directly with one status write and no choice dialog',async()=>{
  vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
  const user=userEvent.setup();
  const task={...validateRecord({kind:'task',title:'Acción única',date:dateKey()}),id:'binary',revision:1};
- const request=vi.fn(async(url:string,init?:RequestInit)=>({ok:true,json:async()=>init?.method==='POST'?{record:{...JSON.parse(String(init.body)),revision:2}}:url.includes('/calendar')?{events:[]}:{records:[task]}}));
+ const request=vi.fn(async(url:string,init?:RequestInit)=>({ok:true,json:async()=>init?.method==='POST'?{record:{...JSON.parse(String(init.body)),revision:2}}:url.includes('/calendar')?{events:[]}:url.includes('/digest')?{items:[]}:{records:[task]}}));
  vi.stubGlobal('fetch',request);
- render(<MissionControl view="today"/>);
+ await act(async()=>{render(<MissionControl view="today"/>);});
  await user.click(await screen.findByRole('checkbox',{name:'Completar Acción única'}));
  await waitFor(()=>expect(request.mock.calls.filter(([,init])=>init?.method==='POST')).toHaveLength(1));
  expect(screen.queryByRole('dialog')).toBeNull();

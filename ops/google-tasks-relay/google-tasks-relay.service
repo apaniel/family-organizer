@@ -1,0 +1,16 @@
+[Unit]
+Description=Outbound Google Tasks Dashboard relay
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/hermes/workspaces/family-google-canonical
+Environment=HERMES_HOME=/home/hermes/.hermes/profiles/familia
+ExecStart=/home/hermes/.hermes/hermes-agent/venv/bin/python /home/hermes/workspaces/family-google-canonical/ops/google-tasks-relay/worker.py
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

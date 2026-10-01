@@ -3,7 +3,7 @@ import {createRequire} from 'node:module';
 import {readFileSync} from 'node:fs';
 import {getCloudflareContext} from '@opennextjs/cloudflare';
 import {listGifts,createGift,updateGift,deleteGift} from '@/lib/family-mission/gift-store';
-import {readRecords} from '@/lib/family-mission/store';
+import {readNonTaskRecords as readRecords} from '@/lib/family-mission/store';
 vi.mock('@opennextjs/cloudflare',()=>({getCloudflareContext:vi.fn()}));
 const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
 let sqlite:any;
@@ -20,7 +20,7 @@ it('seeds exactly five Paula ideas once, including concurrent reads, and hides i
  for(const item of items)expect(item).toMatchObject({child:'Paula',occasion:'unassigned',status:'idea',revision:1});
  expect(await listGifts()).toEqual(items);
  expect(sqlite.prepare('SELECT COUNT(*) n FROM family_records').get().n).toBe(5);
- sqlite.prepare('INSERT INTO family_records VALUES(?,?,?,?,?,?,?)').run('ordinary','task','{"title":"Visible"}',null,1,'now','now');
+ sqlite.prepare('INSERT INTO family_records VALUES(?,?,?,?,?,?,?)').run('ordinary','meal','{"title":"Visible"}',null,1,'now','now');
  expect((await readRecords()).map(x=>x.title)).toEqual(['Visible']);
 });
 it('persists CRUD and rejects stale updates and deletes without overwriting changes',async()=>{

@@ -14,7 +14,7 @@ it('assigns an unassigned event through the daily digest and the existing editor
  const event={...validateRecord({kind:'event',title:'Visita ficticia',date:dateKey(),owner:'Sin asignar',confirmed:true}),id:'event',revision:2};
  const request=vi.fn(async(url:string,init?:RequestInit)=>{
   if(init?.method==='POST')return {ok:true,json:async()=>({record:{...JSON.parse(String(init.body)),revision:3}})};
-  return {ok:true,json:async()=>url.includes('/calendar')?{events:[]}:url.includes('/digest')?{items:[]}:{records:[event]}};
+  return {ok:true,json:async()=>url.includes('/calendar')?{events:[]}:url.includes('/digest')?{items:[]}:{records:[event],taskAvailable:true,taskRefreshedAt:new Date().toISOString()}};
  });
  vi.stubGlobal('fetch',request);
  await act(async()=>{render(<MissionControl view="today"/>);});
@@ -38,7 +38,7 @@ it('shows binary tasks without checklist controls, progress or incomplete warnin
  vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
  const user=userEvent.setup();
  const task={...validateRecord({kind:'task',title:'Tarea binaria',owner:'Cris',date:dateKey(),checklist:[{text:'Paso antiguo',done:false}]}),id:'binary',revision:1};
- vi.stubGlobal('fetch',vi.fn(async(url:string)=>({ok:true,json:async()=>url.includes('/calendar')?{events:[]}:url.includes('/digest')?{items:[]}:{records:[task,{...task,id:'done',title:'Hecha antigua',status:'done'}]}})));
+ vi.stubGlobal('fetch',vi.fn(async(url:string)=>({ok:true,json:async()=>url.includes('/calendar')?{events:[]}:url.includes('/digest')?{items:[]}:{records:[task,{...task,id:'done',title:'Hecha antigua',status:'done'}],taskAvailable:true,taskRefreshedAt:new Date().toISOString()}})));
  await act(async()=>{render(<MissionControl view="today"/>);});
  await user.click(await screen.findByRole('button',{name:/^Tarea binaria/}));
  expect(screen.queryByText('Lista de preparación')).toBeNull();
@@ -51,7 +51,7 @@ it('completes directly with one status write and no choice dialog',async()=>{
  vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
  const user=userEvent.setup();
  const task={...validateRecord({kind:'task',title:'Acción única',date:dateKey()}),id:'binary',revision:1};
- const request=vi.fn(async(url:string,init?:RequestInit)=>({ok:true,json:async()=>init?.method==='POST'?{record:{...JSON.parse(String(init.body)),revision:2}}:url.includes('/calendar')?{events:[]}:url.includes('/digest')?{items:[]}:{records:[task]}}));
+ const request=vi.fn(async(url:string,init?:RequestInit)=>({ok:true,json:async()=>init?.method==='POST'?{record:{...JSON.parse(String(init.body)),revision:2}}:url.includes('/calendar')?{events:[]}:url.includes('/digest')?{items:[]}:{records:[task],taskAvailable:true,taskRefreshedAt:new Date().toISOString()}}));
  vi.stubGlobal('fetch',request);
  await act(async()=>{render(<MissionControl view="today"/>);});
  await user.click(await screen.findByRole('checkbox',{name:'Completar Acción única'}));

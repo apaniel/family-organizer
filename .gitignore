@@ -66,3 +66,7 @@ mobile/eas.json
 .open-next/
 .wrangler/
 .dev.vars*
+
+# Python local caches
+__pycache__/
+*.pyc

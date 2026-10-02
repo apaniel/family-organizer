@@ -67,7 +67,7 @@ def execute(payload, before):
 
 
 # Each idle snapshot costs about five Google Tasks API calls; refreshing every 2 s exhausted the daily project quota.
-SNAPSHOT_SECONDS = 60
+SNAPSHOT_SECONDS = 45
 last_snapshot = 0.0
 
 
@@ -109,11 +109,11 @@ def tick():
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
-    delay = 2
+    delay = 5
     while True:
         try:
             tick()
-            delay = 2
+            delay = 5
         except Exception:
             logging.warning('Relay unavailable; no operation replayed')
             delay = min(30, delay * 2)

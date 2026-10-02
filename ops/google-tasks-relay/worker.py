@@ -66,12 +66,21 @@ def execute(payload, before):
     return {**result, 'record': saved}, after
 
 
+# Each idle snapshot costs about five Google Tasks API calls; refreshing every 2 s exhausted the daily project quota.
+SNAPSHOT_SECONDS = 60
+last_snapshot = 0.0
+
+
 def tick():
+    global last_snapshot
     command = relay({'action': 'claim'})['command']
     if not command:
+        if time.monotonic() - last_snapshot < SNAPSHOT_SECONDS:
+            return
         generation = relay({'action': 'snapshot-start'})['generation']
         if generation is not None:
             relay({'action': 'snapshot', 'generation': generation, 'records': snapshot()})
+            last_snapshot = time.monotonic()
         return
     identity = {'id': command['id'], 'leaseToken': command['leaseToken']}
     # Read before beginning. A failure here is safe to retry after the claim lease expires.

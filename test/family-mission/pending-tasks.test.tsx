@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {expect,it,vi,beforeEach} from 'vitest';
-import {render,screen,within,waitFor} from '@testing-library/react';
+import {render,screen,within,waitFor,act} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import MissionControl from '@/components/mission/MissionControl';
 import {dateKey,addDays,validateRecord,type FamilyRecord} from '@/lib/family-mission/model';
@@ -13,7 +13,7 @@ const today=dateKey(), yesterday=addDays(today,-1);
 const task=(id:string,patch:Partial<FamilyRecord>={}):FamilyRecord=>({...validateRecord({kind:'task',title:id,date:today,owner:'Dani',...patch}),id,revision:1});
 beforeEach(()=>vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}}));
 function setup(records:FamilyRecord[],view:'today'|'week'='today'){
- const request=vi.fn(async(url:string,init?:RequestInit)=>({ok:true,json:async()=>init?.method==='POST'?{record:{...JSON.parse(String(init.body)),revision:2}}:url.includes('/calendar')?{events:[]}:{records}}));
+ const request=vi.fn(async(url:string,init?:RequestInit):Promise<any>=>({ok:true,json:async()=>init?.method==='POST'?{record:{...JSON.parse(String(init.body)),revision:2}}:url.includes('/calendar')?{events:[]}:{records,taskAvailable:true,taskRefreshedAt:new Date().toISOString()}}));
  vi.stubGlobal('fetch',request);render(<MissionControl view={view}/>);return request;
 }
 it('renders one pending section, no split task panels, and retains unrelated modules',async()=>{
@@ -65,4 +65,28 @@ it('uses TAREAS in the week and keeps tasks on their actual dates without overdu
  setup([task('Plan anterior',{date:start}),task('Plan futuro',{date:addDays(start,6)})],'week');
  expect(await screen.findAllByRole('heading',{name:'TAREAS'})).toHaveLength(7);expect(screen.queryByText('LO DEL DÍA')).toBeNull();
  expect(screen.getAllByText('Plan anterior')).toHaveLength(1);expect(screen.getAllByText('Plan futuro')).toHaveLength(1);
+});
+
+it('fails closed on initial unavailability without claiming all tasks are done',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(url:string)=>({ok:true,json:async()=>url.includes('/calendar')?{events:[]}:{records:[task('Stale')],taskAvailable:false,taskRefreshedAt:null}})));
+ render(<MissionControl view="today"/>);await screen.findByText('Tareas no disponibles');expect(screen.queryByText('Todo al día')).toBeNull();expect(screen.queryByText('Stale')).toBeNull();
+});
+it('clears old task rows after a failed refresh and preserves meals',async()=>{
+ const request=setup([task('Previously current'),{...validateRecord({kind:'meal',title:'Pasta preservada',date:today}),id:'meal',revision:1}]);await screen.findByText('Previously current');
+ request.mockImplementation(async(url:string)=>({ok:!url.includes('/records'),json:async()=>url.includes('/calendar')?{events:[]}:{error:'Unavailable'}}) as any);
+ // Use the same public refresh event as the live Dashboard.
+ const {DASHBOARD_REFRESH}=await import('@/components/mission/dashboard-refresh');await act(async()=>{window.dispatchEvent(new Event(DASHBOARD_REFRESH));});
+ await screen.findByText('Tareas no disponibles');expect(screen.queryByText('Previously current')).toBeNull();expect(screen.queryByText('Todo al día')).toBeNull();expect(screen.getByText('Pasta preservada')).toBeVisible();
+});
+it('retains a failed submission key for retries and creates a new key for a new intent',async()=>{
+ const request=setup([]);const user=userEvent.setup();await screen.findByText('Todo al día');await user.click(screen.getByRole('button',{name:'Añadir tarea'}));const dialog=within(screen.getByRole('dialog'));await user.type(dialog.getByRole('textbox',{name:/Qué hay/}),'Intento');
+ const original=request.getMockImplementation()!;let attempts=0;
+ request.mockImplementation(async(url:string,init?:RequestInit)=>{if(init?.method==='POST'){attempts++;return {ok:attempts>1,json:async()=>attempts>1?{record:{...JSON.parse(String(init.body)),id:'created',revision:1}}:{error:'Pending'}};}return original(url,init);});
+ await user.click(dialog.getByRole('button',{name:'Guardar'}));await screen.findAllByText('Pending');await user.click(dialog.getByRole('button',{name:'Guardar'}));await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());
+ await user.click(screen.getByRole('button',{name:'Añadir tarea'}));const next=within(screen.getByRole('dialog'));await user.type(next.getByRole('textbox',{name:/Qué hay/}),'Intento');await user.click(next.getByRole('button',{name:'Guardar'}));
+ const keys=request.mock.calls.filter(([,init])=>init?.method==='POST').map(([,init])=>(init!.headers as Record<string,string>)['Idempotency-Key']);expect(keys[0]).toBe(keys[1]);expect(keys[2]).not.toBe(keys[0]);
+});
+
+it('expires a displayed snapshot even when background refresh cannot run',async()=>{
+ vi.useFakeTimers();vi.spyOn(document,'visibilityState','get').mockReturnValue('hidden');try{setup([task('Expires')]);await act(async()=>{await Promise.resolve();});expect(screen.getByText('Expires')).toBeVisible();await act(async()=>{vi.advanceTimersByTime(90001);});expect(screen.queryByText('Expires')).toBeNull();expect(screen.queryByText('Todo al día')).toBeNull();expect(screen.getByText('Tareas no disponibles')).toBeVisible();}finally{vi.useRealTimers();}
 });

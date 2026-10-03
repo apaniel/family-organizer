@@ -1,16 +1,16 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {createHash} from 'node:crypto';
 vi.mock('server-only',()=>({}));
-type Task={id:string;title:string;notes?:string;updated:string;status:string;due?:string|null;completed?:string|null;webViewLink?:string};
+type Task={id:string;title:string;notes?:string;updated:string;status:string;due?:string|null;completed?:string|null;webViewLink?:string;deleted?:boolean};
 const updated='2026-10-01T10:12:13.456Z';
 const revision=(value:string)=>parseInt(createHash('sha256').update(value).digest('hex').slice(0,13),16);
-let tasks:Map<string,Task>;let events:Map<string,Record<string,unknown>>;let calls:{url:URL;method:string;body:Record<string,unknown>}[];let rejectPost:boolean;let failPostStatus:number;let failPatchAfterEventDelete:boolean;let failCalendarStatus:number;
+let tasks:Map<string,Task>;let events:Map<string,Record<string,unknown>>;let calls:{url:URL;method:string;body:Record<string,unknown>}[];let rejectPost:boolean;let failPostStatus:number;let failPatchAfterEventDelete:boolean;let failCalendarStatus:number;let returnDeletedOnGet:boolean;let retainDeletedTask:boolean;
 const response=(body:unknown,status=200)=>new Response(status===204?null:JSON.stringify(body),{status});
 const draft={kind:'task' as const,title:'Private title',date:'',time:'',notes:'Private notes',owner:'Familia',category:'family',status:'open' as const,recurrence:'none' as const,checklist:[],reminderDays:0,sourceKey:'dashboard:fixture'};
 beforeEach(()=>{
  vi.resetModules();vi.useFakeTimers();vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
  for(const name of ['TASKS','CALENDAR'])for(const part of ['CLIENT_ID','CLIENT_SECRET','REFRESH_TOKEN'])vi.stubEnv(`GOOGLE_${name}_${part}`,`${name}_${part}_secret`);
- tasks=new Map();events=new Map();calls=[];rejectPost=false;failPostStatus=0;failPatchAfterEventDelete=false;failCalendarStatus=0;
+ tasks=new Map();events=new Map();calls=[];rejectPost=false;failPostStatus=0;failPatchAfterEventDelete=false;failCalendarStatus=0;returnDeletedOnGet=false;retainDeletedTask=false;
  vi.stubGlobal('fetch',vi.fn(async(input:string|URL|Request,init?:RequestInit)=>{
   const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);const method=init?.method||'GET';
   const body=init?.body instanceof URLSearchParams?Object.fromEntries(init.body):init?.body&&typeof init.body==='string'?JSON.parse(init.body):{};calls.push({url,method,body});
@@ -36,8 +36,8 @@ beforeEach(()=>{
    const old=tasks.get(id);if(!old)return response({},404);
    const task={...old,...body,updated};for(const key of ['completed','due'] as const)if(task[key]===null)delete task[key];tasks.set(id,task);return response(task);
   }
-  if(method==='DELETE'){tasks.delete(id);return response(null,204);}
-  if(id)return tasks.has(id)?response(tasks.get(id)):response({},404);
+  if(method==='DELETE'){const task=tasks.get(id);if(retainDeletedTask&&task)tasks.set(id,{...task,deleted:true});else tasks.delete(id);return response(null,204);}
+  if(id){const task=tasks.get(id);return task?response(returnDeletedOnGet?{...task,deleted:true}:task):response({},404);}
   return response({items:Array.from(tasks.values())});
  }));
 });
@@ -47,6 +47,10 @@ const seed=(patch:Partial<Task>={})=>{tasks.set('task-1',{id:'task-1',title:'Pri
 it('preserves the exact relay snapshot shape and Python revision formula',async()=>{
  seed({due:'2026-10-04T00:00:00.000Z',notes:'Visible\nResponsable (Dashboard): Sin asignar\n\n#hermes aviso=2&cat=admin&estado=esperando&evento=event-1&hora=09%3A30&key=dashboard%3Afixture',webViewLink:'https://tasks.google.com/task-1'});
  const {listTasks}=await api();expect(await listTasks()).toEqual([{kind:'task',id:'task-1',title:'Private title',date:'2026-10-04',endDate:'',time:'09:30',endTime:'',owner:'Sin asignar',status:'waiting',category:'admin',notes:'Visible',checklist:[],audience:'adults',recurrence:'none',confirmed:true,reminderDays:2,sourceKey:'dashboard:fixture',updatedAt:updated,completedAt:null,eventId:'event-1',webViewLink:'https://tasks.google.com/task-1',store:'google-tasks',revision:revision(updated),slot:'dinner',source:'Google Tasks'}]);
+});
+it('skips deleted tasks while retaining live items in list responses',async()=>{
+ seed({deleted:true});tasks.set('live-task',{id:'live-task',title:'Live task',updated,status:'needsAction',deleted:false});
+ const {listTasks}=await api();expect(await listTasks()).toMatchObject([{id:'live-task',title:'Live task'}]);
 });
 it('caches reads for 15 seconds and access tokens until 60 seconds before expiry',async()=>{
  const {listTasks}=await api();await listTasks();const count=calls.length;await listTasks();expect(calls).toHaveLength(count);
@@ -61,6 +65,13 @@ it('rejects stale revisions before making a Google mutation',async()=>{
  seed();const {saveTask,GoogleTasksConflict}=await api();await expect(saveTask({...draft,id:'task-1',revision:revision(updated)-1})).rejects.toBeInstanceOf(GoogleTasksConflict);
  expect(calls.filter(c=>['POST','PATCH','DELETE'].includes(c.method)&&c.url.hostname!=='oauth2.googleapis.com')).toHaveLength(0);
 });
+it('rejects an update when fresh revision preflight returns a deleted task',async()=>{
+ seed();returnDeletedOnGet=true;const log=vi.spyOn(console,'error').mockImplementation(()=>{});const {saveTask,GoogleTasksConflict}=await api();
+ await expect(saveTask({...draft,id:'task-1',revision:revision(updated)})).rejects.toBeInstanceOf(GoogleTasksConflict);
+ expect(calls.some(c=>c.method==='GET'&&c.url.pathname.endsWith('/tasks/task-1'))).toBe(true);
+ expect(calls.filter(c=>['POST','PATCH','DELETE'].includes(c.method)&&c.url.hostname!=='oauth2.googleapis.com')).toHaveLength(0);
+ expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({phase:'save',reason:'conflict'});
+});
 it('creates one linked event, updates it on retries, and removes it when the task loses its time',async()=>{
  const {saveTask,listTasks}=await api();const timed={...draft,date:'2026-10-04',time:'09:30',reminderDays:2};const first=await saveTask(timed);const eventId='4210b937a4a96787f61699c742b87a4636d93260b1a39599452e07d2b5116bc6';expect(first.record.eventId).toBe(eventId);
  await saveTask(timed);expect(calls.filter(c=>c.method==='POST'&&c.url.pathname.includes('/calendar/v3/'))).toHaveLength(1);
@@ -71,6 +82,12 @@ it('creates one linked event, updates it on retries, and removes it when the tas
 it('deletes the linked Calendar event before deleting the task and verifies absence',async()=>{
  seed({notes:'Private notes\n\n#hermes evento=event-1&key=dashboard%3Afixture'});events.set('event-1',{id:'event-1'});const {deleteTask,listTasks}=await api();await deleteTask('task-1',revision(updated));
  expect(events.size).toBe(0);expect(await listTasks()).toEqual([]);const deletes=calls.filter(c=>c.method==='DELETE');expect(deletes).toHaveLength(2);expect(deletes[0].url.pathname).toContain('/calendar/v3/');
+});
+it('verifies deletion when readback returns a deleted task with HTTP 200',async()=>{
+ seed();retainDeletedTask=true;const {deleteTask}=await api();
+ await expect(deleteTask('task-1',revision(updated))).resolves.toEqual({ok:true});
+ expect(tasks.get('task-1')?.deleted).toBe(true);expect(calls.at(-1)).toMatchObject({method:'GET'});
+ expect(calls.filter(c=>c.method==='DELETE')).toHaveLength(1);
 });
 it('completes a task using Google Tasks status',async()=>{
  seed();const {saveTask}=await api();expect(await saveTask({...draft,id:'task-1',revision:revision(updated),status:'done'})).toMatchObject({record:{status:'done'}});

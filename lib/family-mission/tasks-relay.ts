@@ -1,9 +1,11 @@
 import 'server-only';
 import {getCloudflareContext} from '@opennextjs/cloudflare';
+import {listTasks} from './google-tasks';
+export function tasksDirect(){return process.env.TASKS_DIRECT==='1';}
 export const MAX_SNAPSHOT_AGE=90000;
 export async function relayDB():Promise<any>{const {env}=await getCloudflareContext({async:true});if(!(env as any).FAMILY_DB)throw new Error('Relay unavailable');return (env as any).FAMILY_DB;}
 export function assertFresh(stamp:number,now=Date.now()){if(!Number.isFinite(stamp)||stamp>now+5000||now-stamp>MAX_SNAPSHOT_AGE)throw new Error('Google Tasks no está disponible: copia desactualizada.');}
-export async function taskSnapshot(){const db=await relayDB();const row=await db.prepare('SELECT * FROM google_tasks_mirror WHERE id=1').first();if(!row)throw new Error('Google Tasks todavía no está disponible.');assertFresh(row.refreshed_at);return {records:JSON.parse(row.records),store:'google-tasks',mirror:true,refreshedAt:new Date(row.refreshed_at).toISOString()};}
+export async function taskSnapshot(){if(tasksDirect())return {records:await listTasks(),store:'google-tasks',mirror:false,refreshedAt:new Date().toISOString()};const db=await relayDB();const row=await db.prepare('SELECT * FROM google_tasks_mirror WHERE id=1').first();if(!row)throw new Error('Google Tasks todavía no está disponible.');assertFresh(row.refreshed_at);return {records:JSON.parse(row.records),store:'google-tasks',mirror:true,refreshedAt:new Date(row.refreshed_at).toISOString()};}
 export function commandPayload(action:string,raw:any){
  if(!['save','delete'].includes(action)||!raw||typeof raw!=='object')throw new Error('Operación no válida.');
  if(raw.id!==undefined&&(typeof raw.id!=='string'||raw.id.length>300))throw new Error('ID no válido.');
@@ -37,6 +39,11 @@ export async function enqueueTask(action:string,raw:any,actor:string,key?:string
 export function commandResult(row:any){return {operationId:row.id,state:row.state,...(row.state==='done'?JSON.parse(row.result):{error:row.error||'La operación está pendiente de verificación en Google. No está completada.'})};}
 export async function getTaskOperation(id:string,actor:string){const row=await (await relayDB()).prepare('SELECT * FROM google_tasks_commands WHERE id=? AND actor=?').bind(id,actor).first();if(!row)throw new Error('Operación no encontrada.');return commandResult(row);}
 export async function workerRelay(body:any){
+ if(tasksDirect()){
+  if(body.action==='claim')return {command:null};
+  if(body.action==='snapshot-start')return {generation:null};
+  if(['snapshot','begin','finish'].includes(body.action))return {ok:false};
+ }
  const db=await relayDB(),now=Date.now();
  if(body.action==='claim'){
   await db.batch([

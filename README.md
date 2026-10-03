@@ -28,6 +28,8 @@ Authenticated `GET /api/family/completion-digest?date=YYYY-MM-DD` returns `{date
 
 Apply `migrations/0006_completion_provenance.sql` before running the updated records API. `POST /api/family/records` derives provenance from its existing authentication: verified email/browser requests are explicit/dashboard. Service callers may send `x-family-completion-mode: explicit|inferred` and `x-family-completion-channel: whatsapp|telegram|email|other`. Both headers must be valid; otherwise provenance defaults to inferred/other. Payload provenance is ignored. The migration preserves historical audit rows and adds nullable constrained provenance columns.
 
+Google Tasks is the only Dashboard task store. Task reads and writes use the Google API directly; migration `0010_drop_google_tasks_relay.sql` removes the retired relay tables without changing local records or audit history.
+
 ## Binary tasks and legacy checklist migration
 
 A task is one action, with open/waiting/done status (existing archive behavior is retained). Unfinished actions and unanswered questions each belong in a separate open task assigned to the responsible person. The dashboard has no task checklist editor or partial-completion choices. Normal record writes reject nonempty task checklists with Spanish HTTP 400; legacy records remain readable. Migrate legacy lists before editing those tasks in the dashboard. Non-task fields and recurring occurrence behavior are retained.

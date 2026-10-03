@@ -3,13 +3,13 @@ import {assertPlannerRecord} from '@/lib/family-mission/record-namespaces';
 import {requireCalendarSyncRouteAuth} from '@/lib/calendar-sync-auth';
 import {readNonTaskRecords,saveRecord,saveCompletedTask,removeRecord,type CompletionProvenance} from '@/lib/family-mission/store';
 import {dateKey,reminderCandidates} from '@/lib/family-mission/model';
-import {enqueueTask,getTaskOperation,taskSnapshot,commandPayload,tasksDirect} from '@/lib/family-mission/tasks-relay';
-import {saveTask,deleteTask,GoogleTasksConflict,GoogleTasksUnconfirmed} from '@/lib/family-mission/google-tasks';
+import {commandPayload} from '@/lib/family-mission/tasks-command';
+import {taskSnapshot,saveTask,deleteTask,GoogleTasksConflict,GoogleTasksUnconfirmed} from '@/lib/family-mission/google-tasks';
 import {taskActor} from '@/lib/family-mission/tasks-route';
 export const dynamic='force-dynamic';
 const response=(data:any,status=200)=>NextResponse.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export async function GET(req:NextRequest){if(!(await requireCalendarSyncRouteAuth(req)).authorized)return response({error:'Inicia sesión con un correo autorizado para continuar.'},401);
- try{const local=await readNonTaskRecords();let mirror;try{mirror=await taskSnapshot();}catch{mirror=null;}const records=[...local,...(mirror?.records||[])];return response({records:req.nextUrl.searchParams.has('reminders')?reminderCandidates(records,dateKey()):records,taskStore:'google-tasks',taskMirror:mirror?.mirror??!tasksDirect(),taskAvailable:!!mirror,taskRefreshedAt:mirror?.refreshedAt||null});}catch{return response({error:'No se han podido cargar los datos. Inténtalo de nuevo.'},503);}}
+ try{const local=await readNonTaskRecords();let snapshot;try{snapshot=await taskSnapshot();}catch{snapshot=null;}const records=[...local,...(snapshot?.records||[])];return response({records:req.nextUrl.searchParams.has('reminders')?reminderCandidates(records,dateKey()):records,taskStore:'google-tasks',taskMirror:false,taskAvailable:!!snapshot,taskRefreshedAt:snapshot?.refreshedAt||null});}catch{return response({error:'No se han podido cargar los datos. Inténtalo de nuevo.'},503);}}
 
 function completionProvenance(req:NextRequest,kind:string):CompletionProvenance {
  if(kind==='email')return {mode:'explicit',channel:'dashboard'};
@@ -26,26 +26,21 @@ export async function DELETE(req:NextRequest){if(!(await requireCalendarSyncRout
 async function taskWrite(req:NextRequest,action:string,raw:any){
  assertPlannerRecord(raw);
  const actor=await taskActor(req);if(!actor)return response({error:'Acceso no autorizado.'},403);
- if(tasksDirect()){
-  const payload=commandPayload(action,raw);
-  const key=req.headers.get('idempotency-key');
-  if(key&&!/^[a-zA-Z0-9:-]{8,120}$/.test(key))throw new Error('Clave de operación no válida.');
-  const operationId=key||crypto.randomUUID();
-  if(action==='save'&&!payload.record.id){
-   const input=actor+'\n'+(key||JSON.stringify(payload));
-   const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(input)))).map(x=>x.toString(16).padStart(2,'0')).join('');
-   payload.record.sourceKey='dashboard:'+digest;
-  }
-  try{
-   const result=action==='delete'?await deleteTask(payload.record.id,payload.record.revision):await saveTask(payload.record);
-   return response({operationId,state:'done',...result});
-  }catch(error){
-   if(error instanceof GoogleTasksConflict)return response({operationId,state:'failed',error:'Conflicto: la tarea cambió antes de ejecutar. Actualiza la página.'},409);
-   if(error instanceof GoogleTasksUnconfirmed)return response({operationId,state:'ambiguous',error:'La operación está pendiente de verificación en Google. No está completada.'},503);
-   throw error;
-  }
+ const payload=commandPayload(action,raw);
+ const key=req.headers.get('idempotency-key');
+ if(key&&!/^[a-zA-Z0-9:-]{8,120}$/.test(key))throw new Error('Clave de operación no válida.');
+ const operationId=key||crypto.randomUUID();
+ if(action==='save'&&!payload.record.id){
+  const input=actor+'\n'+(key||JSON.stringify(payload));
+  const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(input)))).map(x=>x.toString(16).padStart(2,'0')).join('');
+  payload.record.sourceKey='dashboard:'+digest;
  }
- let result=await enqueueTask(action,raw,actor,req.headers.get('idempotency-key'));
- for(let i=0;i<35&&['queued','leased','executing'].includes(result.state);i++){await new Promise(resolve=>setTimeout(resolve,500));result=await getTaskOperation(result.operationId,actor);}
- return response(result,result.state==='done'?200:result.state==='failed'?409:503);
+ try{
+  const result=action==='delete'?await deleteTask(payload.record.id,payload.record.revision):await saveTask(payload.record);
+  return response({operationId,state:'done',...result});
+ }catch(error){
+  if(error instanceof GoogleTasksConflict)return response({operationId,state:'failed',error:'Conflicto: la tarea cambió antes de ejecutar. Actualiza la página.'},409);
+  if(error instanceof GoogleTasksUnconfirmed)return response({operationId,state:'ambiguous',error:'La operación está pendiente de verificación en Google. No está completada.'},503);
+  throw error;
+ }
 }

@@ -4,19 +4,20 @@ vi.mock('server-only',()=>({}));
 type Task={id:string;title:string;notes?:string;updated:string;status:string;due?:string|null;completed?:string|null;webViewLink?:string};
 const updated='2026-10-01T10:12:13.456Z';
 const revision=(value:string)=>parseInt(createHash('sha256').update(value).digest('hex').slice(0,13),16);
-let tasks:Map<string,Task>;let events:Map<string,Record<string,unknown>>;let calls:{url:URL;method:string;body:Record<string,unknown>}[];let rejectPost:boolean;let failPostStatus:number;let failPatchAfterEventDelete:boolean;
+let tasks:Map<string,Task>;let events:Map<string,Record<string,unknown>>;let calls:{url:URL;method:string;body:Record<string,unknown>}[];let rejectPost:boolean;let failPostStatus:number;let failPatchAfterEventDelete:boolean;let failCalendarStatus:number;
 const response=(body:unknown,status=200)=>new Response(status===204?null:JSON.stringify(body),{status});
 const draft={kind:'task' as const,title:'Private title',date:'',time:'',notes:'Private notes',owner:'Familia',category:'family',status:'open' as const,recurrence:'none' as const,checklist:[],reminderDays:0,sourceKey:'dashboard:fixture'};
 beforeEach(()=>{
  vi.resetModules();vi.useFakeTimers();vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
  for(const name of ['TASKS','CALENDAR'])for(const part of ['CLIENT_ID','CLIENT_SECRET','REFRESH_TOKEN'])vi.stubEnv(`GOOGLE_${name}_${part}`,`${name}_${part}_secret`);
- tasks=new Map();events=new Map();calls=[];rejectPost=false;failPostStatus=0;failPatchAfterEventDelete=false;
+ tasks=new Map();events=new Map();calls=[];rejectPost=false;failPostStatus=0;failPatchAfterEventDelete=false;failCalendarStatus=0;
  vi.stubGlobal('fetch',vi.fn(async(input:string|URL|Request,init?:RequestInit)=>{
   const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);const method=init?.method||'GET';
-  const body=init?.body&&typeof init.body==='string'?JSON.parse(init.body):{};calls.push({url,method,body});
+  const body=init?.body instanceof URLSearchParams?Object.fromEntries(init.body):init?.body&&typeof init.body==='string'?JSON.parse(init.body):{};calls.push({url,method,body});
   if(url.hostname==='oauth2.googleapis.com')return response({access_token:'private-access-token',expires_in:3600});
   if(url.pathname.endsWith('/users/@me/lists'))return response({items:[{id:'familia-list',title:'Familia'}]});
   if(url.pathname.includes('/calendar/v3/')){
+   if(failCalendarStatus)return response({},failCalendarStatus);
    const id=url.pathname.split('/events/')[1];
    if(method==='POST'){const id=String(body.id||'event-1');if(events.has(id))return response({},409);const event={...body,id};events.set(id,event);return response(event);}
    if(method==='DELETE'){events.delete(id);return response(null,204);}
@@ -65,6 +66,7 @@ it('creates one linked event, updates it on retries, and removes it when the tas
  await saveTask(timed);expect(calls.filter(c=>c.method==='POST'&&c.url.pathname.includes('/calendar/v3/'))).toHaveLength(1);
  const event=events.get(eventId);expect(event).toMatchObject({summary:'Private title',description:'Private notes',start:{dateTime:'2026-10-04T09:30:00+02:00',timeZone:'Europe/Madrid'},end:{dateTime:'2026-10-04T10:00:00+02:00',timeZone:'Europe/Madrid'},reminders:{useDefault:false,overrides:[{method:'popup',minutes:0},{method:'popup',minutes:2880}]}});
  await saveTask({...timed,id:first.record.id,revision:first.record.revision,time:''});expect(events.size).toBe(0);expect((await listTasks())[0].eventId).toBeNull();
+ const refreshes=calls.filter(c=>c.url.hostname==='oauth2.googleapis.com');expect(refreshes).toHaveLength(1);expect(refreshes.map(c=>c.body.client_id)).toEqual(['TASKS_CLIENT_ID_secret']);
 });
 it('deletes the linked Calendar event before deleting the task and verifies absence',async()=>{
  seed({notes:'Private notes\n\n#hermes evento=event-1&key=dashboard%3Afixture'});events.set('event-1',{id:'event-1'});const {deleteTask,listTasks}=await api();await deleteTask('task-1',revision(updated));
@@ -80,12 +82,12 @@ it('invalidates the read cache after a write',async()=>{
 it('never retries an uncertain POST and logs only a sanitized failure',async()=>{
  rejectPost=true;const log=vi.spyOn(console,'error').mockImplementation(()=>{});const {saveTask,GoogleTasksUnconfirmed}=await api();await expect(saveTask(draft)).rejects.toBeInstanceOf(GoogleTasksUnconfirmed);
  expect(calls.filter(c=>c.method==='POST'&&c.url.hostname!=='oauth2.googleapis.com')).toHaveLength(1);
- expect(log).toHaveBeenCalledTimes(1);const logged=JSON.stringify(log.mock.calls);expect(logged).toContain('google_tasks_error');for(const secret of ['Private notes','Private title','private-access-token','TASKS_REFRESH_TOKEN_secret'])expect(logged).not.toContain(secret);
+ expect(log).toHaveBeenCalledTimes(1);expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({step:'tasks-insert',status:null});const logged=JSON.stringify(log.mock.calls);expect(logged).toContain('google_tasks_error');for(const secret of ['Private notes','Private title','private-access-token','task-1','event-1','dashboard:fixture',...['TASKS','CALENDAR'].flatMap(service=>['CLIENT_ID','CLIENT_SECRET','REFRESH_TOKEN'].map(part=>`${service}_${part}_secret`))])expect(logged).not.toContain(secret);
 });
 
 it('treats a Google 5xx after POST as unconfirmed without replaying the write',async()=>{
  failPostStatus=503;const log=vi.spyOn(console,'error').mockImplementation(()=>{});const {saveTask,GoogleTasksUnconfirmed}=await api();await expect(saveTask(draft)).rejects.toBeInstanceOf(GoogleTasksUnconfirmed);
- expect(calls.filter(c=>c.method==='POST'&&c.url.hostname!=='oauth2.googleapis.com')).toHaveLength(1);expect(log).toHaveBeenCalledTimes(1);expect(JSON.stringify(log.mock.calls)).not.toContain('Private notes');
+ expect(calls.filter(c=>c.method==='POST'&&c.url.hostname!=='oauth2.googleapis.com')).toHaveLength(1);expect(log).toHaveBeenCalledTimes(1);expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({step:'tasks-insert',status:503});expect(JSON.stringify(log.mock.calls)).not.toContain('Private notes');
 });
 
 const eventId='4210b937a4a96787f61699c742b87a4636d93260b1a39599452e07d2b5116bc6';
@@ -124,7 +126,8 @@ it('replaces a missing linked event with the deterministic event',async()=>{
 });
 it('reports an unconfirmed write if unlinking the event succeeds before a task patch conflicts',async()=>{
  seed({notes:'Private notes\n\n#hermes cat=family&evento=event-1&key=dashboard%3Afixture'});events.set('event-1',{id:'event-1'});failPatchAfterEventDelete=true;
- vi.spyOn(console,'error').mockImplementation(()=>{});const {saveTask,GoogleTasksUnconfirmed}=await api();await expect(saveTask(draft)).rejects.toBeInstanceOf(GoogleTasksUnconfirmed);
+ const log=vi.spyOn(console,'error').mockImplementation(()=>{});const {saveTask,GoogleTasksUnconfirmed}=await api();await expect(saveTask(draft)).rejects.toBeInstanceOf(GoogleTasksUnconfirmed);
+ expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({step:'tasks-patch',status:412,reason:'unconfirmed'});
  expect(events.size).toBe(0);expect(calls.filter(c=>c.method==='PATCH')).toHaveLength(1);
 });
 it('ports source annotations and drops metadata keys the Python model does not recognize',async()=>{
@@ -135,4 +138,11 @@ it('ports source annotations and drops metadata keys the Python model does not r
 });
 it('uses the Madrid winter offset for timed Calendar events',async()=>{
  const {saveTask}=await api();const saved=await saveTask({...draft,date:'2026-12-15',time:'09:30'});expect(events.get(saved.record.eventId||'')).toMatchObject({start:{dateTime:'2026-12-15T09:30:00+01:00'},end:{dateTime:'2026-12-15T10:00:00+01:00'}});
+});
+
+it('preserves the Calendar HTTP status when a rejected event write is wrapped as unconfirmed',async()=>{
+ failCalendarStatus=403;const log=vi.spyOn(console,'error').mockImplementation(()=>{});const {saveTask}=await api();
+ await expect(saveTask({...draft,date:'2026-10-04',time:'09:30'})).rejects.toMatchObject({status:403});
+ expect(JSON.parse(log.mock.calls[0][0])).toEqual({event:'google_tasks_error',phase:'save',step:'calendar-insert',status:403,reason:'unconfirmed'});
+ expect(tasks.size).toBe(1);expect(events.size).toBe(0);
 });

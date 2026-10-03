@@ -159,7 +159,7 @@ class Session {
             const listId = lists.get(owner);
             if (!listId) continue;
             for (const raw of await this.pages(TASKS + '/lists/' + encodeURIComponent(listId) + '/tasks?maxResults=100&showCompleted=true&showHidden=true'))
-                if (!raw.deleted) out.push({ raw: resource(raw), owner, listId });
+                if (raw.deleted !== true) out.push({ raw: resource(raw), owner, listId });
         }
         return out;
     }
@@ -369,7 +369,7 @@ export async function saveTask(input: TaskInput) {
         const creating = !input.id;
         if (t) {
             const fresh = await s.call(path(t));
-            t = fresh && !fresh.deleted ? { ...t, raw: resource(fresh) } : undefined;
+            t = fresh && fresh.deleted !== true ? { ...t, raw: resource(fresh) } : undefined;
         }
         if (!creating && (!t || (await record(t)).revision !== input.revision)) throw new GoogleTasksConflict('La tarea ha cambiado. Actualiza la página.');
         if (creating) {
@@ -451,7 +451,7 @@ export async function saveTask(input: TaskInput) {
 }
 async function verify(s: Session, t: Located) {
     const raw = await s.call(path(t), 'GET', undefined, undefined, 'readback');
-    if (!raw || raw.deleted) throw new GoogleTasksUnconfirmed('Readback missing');
+    if (!raw || raw.deleted === true) throw new GoogleTasksUnconfirmed('Readback missing');
     const saved = await record({ ...t, raw: resource(raw) });
     const expected = await record(t);
     if (JSON.stringify(saved) !== JSON.stringify(expected)) throw new GoogleTasksUnconfirmed('Readback mismatch');
@@ -462,14 +462,15 @@ export async function deleteTask(id: string, revision?: number) {
         let t = (await s.all()).find((x) => x.raw.id === id);
         if (t) {
             const fresh = await s.call(path(t));
-            t = fresh && !fresh.deleted ? { ...t, raw: resource(fresh) } : undefined;
+            t = fresh && fresh.deleted !== true ? { ...t, raw: resource(fresh) } : undefined;
         }
         if (!t || (revision !== undefined && (await record(t)).revision !== revision))
             throw new GoogleTasksConflict('La tarea ha cambiado. Actualiza la página.');
         const eventId = split(t.raw.notes).meta.get('evento');
         if (eventId) await s.call(CALENDAR + '/' + encodeURIComponent(eventId), 'DELETE');
         await s.call(path(t), 'DELETE', undefined, t.raw.etag);
-        if (await s.call(path(t), 'GET', undefined, undefined, 'readback')) throw new GoogleTasksUnconfirmed('Deletion not verified');
+        const readback = await s.call(path(t), 'GET', undefined, undefined, 'readback');
+        if (readback && readback.deleted !== true) throw new GoogleTasksUnconfirmed('Deletion not verified');
         return { ok: true };
     });
 }

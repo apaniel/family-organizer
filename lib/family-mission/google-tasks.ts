@@ -5,7 +5,11 @@ const TASKS = 'https://tasks.googleapis.com/tasks/v1';
 const CALENDAR = 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent('losapalas@gmail.com') + '/events';
 const EVENT_MINUTES = 30;
 const UNASSIGNED = 'Responsable (Dashboard): Sin asignar';
-export class GoogleTasksConflict extends Error {}
+export class GoogleTasksConflict extends Error {
+    constructor(message: string, public status: number | null = null) {
+        super(message);
+    }
+}
 export class GoogleTasksUnconfirmed extends Error {
     constructor(message: string, public status: number | null = null) {
         super(message);
@@ -53,17 +57,17 @@ function resource(value: unknown): Resource {
         if (r[k] !== undefined && r[k] !== null && typeof r[k] !== 'string') throw new Error('Invalid Google task');
     return Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) as Resource;
 }
-const tokens = new Map<string, { value: string; expires: number; pending?: never }>();
-const refreshes = new Map<string, Promise<string>>();
-async function token(service: 'TASKS' | 'CALENDAR') {
-    const cached = tokens.get(service);
+let cachedToken: { value: string; expires: number } | undefined;
+let pendingRefresh: Promise<string> | undefined;
+async function token() {
+    const cached = cachedToken;
     if (cached && cached.expires > Date.now()) return cached.value;
-    const pending = refreshes.get(service);
+    const pending = pendingRefresh;
     if (pending) return pending;
     const refresh = (async () => {
-        const client_id = process.env[`GOOGLE_${service}_CLIENT_ID`],
-            client_secret = process.env[`GOOGLE_${service}_CLIENT_SECRET`],
-            refresh_token = process.env[`GOOGLE_${service}_REFRESH_TOKEN`];
+        const client_id = process.env.GOOGLE_TASKS_CLIENT_ID,
+            client_secret = process.env.GOOGLE_TASKS_CLIENT_SECRET,
+            refresh_token = process.env.GOOGLE_TASKS_REFRESH_TOKEN;
         if (!client_id || !client_secret || !refresh_token) throw new Error('Google credentials incomplete');
         const response = await fetch('https://oauth2.googleapis.com/token', {
             method: 'POST',
@@ -75,14 +79,14 @@ async function token(service: 'TASKS' | 'CALENDAR') {
         if (!response.ok) throw new ApiError(response.status, 'authorization');
         const body = object(await response.json());
         if (typeof body.access_token !== 'string' || typeof body.expires_in !== 'number') throw new Error('Invalid Google authorization response');
-        tokens.set(service, { value: body.access_token, expires: Date.now() + (body.expires_in - 60) * 1000 });
+        cachedToken = { value: body.access_token, expires: Date.now() + (body.expires_in - 60) * 1000 };
         return body.access_token;
     })();
-    refreshes.set(service, refresh);
+    pendingRefresh = refresh;
     try {
         return await refresh;
     } finally {
-        refreshes.delete(service);
+        pendingRefresh = undefined;
     }
 }
 class ApiError extends Error {
@@ -90,11 +94,23 @@ class ApiError extends Error {
         super('Google Tasks unavailable');
     }
 }
+type Step = 'tasks-read' | 'tasks-insert' | 'tasks-patch' | 'tasks-delete' | 'calendar-get' | 'calendar-insert' | 'calendar-patch' | 'calendar-delete' | 'readback';
+function errorStatus(error: unknown) {
+    return error instanceof ApiError || error instanceof GoogleTasksUnconfirmed || error instanceof GoogleTasksConflict ? error.status : null;
+}
 class Session {
+    step: Step | null = null;
     written = false;
     mutations = 0;
-    async call(url: string, method = 'GET', body?: unknown, etag?: string): Promise<Json | null> {
-        const access = await token(url.startsWith(CALENDAR) ? 'CALENDAR' : 'TASKS');
+    async call(url: string, method = 'GET', body?: unknown, etag?: string, step?: 'readback'): Promise<Json | null> {
+        const calendar = url.startsWith(CALENDAR);
+        this.step = step ?? (
+            method === 'GET' ? (calendar ? 'calendar-get' : 'tasks-read') :
+            method === 'POST' ? (calendar ? 'calendar-insert' : 'tasks-insert') :
+            method === 'DELETE' ? (calendar ? 'calendar-delete' : 'tasks-delete') :
+            (calendar ? 'calendar-patch' : 'tasks-patch')
+        );
+        const access = await token();
         const writing = method !== 'GET';
         if (writing) this.written = true;
         try {
@@ -107,7 +123,7 @@ class Session {
             });
             if (response.status === 410 && method === 'GET' && url.startsWith(CALENDAR)) return { status: 'cancelled' };
             if (response.status === 404 || response.status === 410) return null;
-            if (response.status === 412) throw new GoogleTasksConflict('La tarea ha cambiado. Actualiza la página.');
+            if (response.status === 412) throw new GoogleTasksConflict('La tarea ha cambiado. Actualiza la página.', response.status);
             if (!response.ok) throw new ApiError(response.status, response.status >= 500 ? 'server' : 'rejected');
             if (writing) this.mutations++;
             return response.status === 204 ? {} : object(await response.json());
@@ -207,7 +223,7 @@ function invalidate() {
     cache = undefined;
     generation++;
 }
-async function report<T>(phase: string, run: () => Promise<T>): Promise<T> {
+async function report<T>(phase: string, session: Session, run: () => Promise<T>): Promise<T> {
     try {
         return await run();
     } catch (e) {
@@ -215,7 +231,8 @@ async function report<T>(phase: string, run: () => Promise<T>): Promise<T> {
             JSON.stringify({
                 event: 'google_tasks_error',
                 phase,
-                status: e instanceof ApiError || e instanceof GoogleTasksUnconfirmed ? e.status : null,
+                step: session.step,
+                status: errorStatus(e),
                 reason:
                     e instanceof GoogleTasksConflict
                         ? 'conflict'
@@ -230,10 +247,11 @@ async function report<T>(phase: string, run: () => Promise<T>): Promise<T> {
     }
 }
 export async function listTasks() {
-    return report('list', async () => {
+    const s = new Session();
+    return report('list', s, async () => {
         if (cache && cache.expires > Date.now()) return structuredClone(cache.records);
         const stamp = generation;
-        const records = await Promise.all((await new Session().all()).map(record));
+        const records = await Promise.all((await s.all()).map(record));
         records.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999') || a.time.localeCompare(b.time) || a.title.localeCompare(b.title));
         if (stamp === generation) cache = { records, expires: Date.now() + 15000 };
         return structuredClone(records);
@@ -321,21 +339,21 @@ async function syncEvent(s: Session, t: Located) {
 }
 let writes: Promise<unknown> = Promise.resolve();
 function serialized<T>(phase: string, run: (s: Session) => Promise<T>): Promise<T> {
-    const next = writes.then(() =>
-        report(phase, async () => {
+    const next = writes.then(() => {
+        const s = new Session();
+        return report(phase, s, async () => {
             invalidate();
-            const s = new Session();
             try {
                 return await run(s);
             } catch (e) {
                 if ((s.mutations > 0 || (s.written && !(e instanceof GoogleTasksConflict))) && !(e instanceof GoogleTasksUnconfirmed))
-                    throw new GoogleTasksUnconfirmed('Google no ha confirmado la operación.');
+                    throw new GoogleTasksUnconfirmed('Google no ha confirmado la operación.', errorStatus(e));
                 throw e;
             } finally {
                 invalidate();
             }
-        })
-    );
+        });
+    });
     writes = next.catch(() => {});
     return next;
 }
@@ -432,7 +450,7 @@ export async function saveTask(input: TaskInput) {
     });
 }
 async function verify(s: Session, t: Located) {
-    const raw = await s.call(path(t));
+    const raw = await s.call(path(t), 'GET', undefined, undefined, 'readback');
     if (!raw || raw.deleted) throw new GoogleTasksUnconfirmed('Readback missing');
     const saved = await record({ ...t, raw: resource(raw) });
     const expected = await record(t);
@@ -451,7 +469,7 @@ export async function deleteTask(id: string, revision?: number) {
         const eventId = split(t.raw.notes).meta.get('evento');
         if (eventId) await s.call(CALENDAR + '/' + encodeURIComponent(eventId), 'DELETE');
         await s.call(path(t), 'DELETE', undefined, t.raw.etag);
-        if (await s.call(path(t))) throw new GoogleTasksUnconfirmed('Deletion not verified');
+        if (await s.call(path(t), 'GET', undefined, undefined, 'readback')) throw new GoogleTasksUnconfirmed('Deletion not verified');
         return { ok: true };
     });
 }

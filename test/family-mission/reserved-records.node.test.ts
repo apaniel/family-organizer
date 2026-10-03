@@ -10,7 +10,7 @@ import {saveRecord,saveCompletedTask,removeRecord,readRecords} from '@/lib/famil
 import {flattenRecord} from '@/lib/family-mission/flatten';
 import {POST as flattenPOST} from '@/app/api/family/records/flatten/route';
 import {listGifts} from '@/lib/family-mission/gift-store';
-vi.mock('@/lib/family-mission/tasks-relay',()=>({taskSnapshot:vi.fn(async()=>({records:[],store:'google-tasks',mirror:true,refreshedAt:'now'}))}));
+vi.mock('@/lib/family-mission/google-tasks',()=>({taskSnapshot:vi.fn(async()=>({records:[],store:'google-tasks',mirror:false,refreshedAt:'now'}))}));
 vi.mock('server-only',()=>({}));
 vi.mock('@opennextjs/cloudflare',()=>({getCloudflareContext:vi.fn()}));
 vi.mock('@/lib/calendar-sync-auth',()=>({requireCalendarSyncRouteAuth:vi.fn()}));

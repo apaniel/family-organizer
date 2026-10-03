@@ -5,10 +5,10 @@ import {readFileSync} from 'node:fs';
 import {GET} from '@/app/api/family/completion-digest/route';
 import {readCompletionDigest} from '@/lib/family-mission/completion-digest-store';
 import {requireCalendarSyncRouteAuth} from '@/lib/calendar-sync-auth';
-import {taskSnapshot} from '@/lib/family-mission/tasks-relay';
+import {taskSnapshot} from '@/lib/family-mission/google-tasks';
 vi.mock('server-only',()=>({}));
 vi.mock('@/lib/calendar-sync-auth',()=>({requireCalendarSyncRouteAuth:vi.fn()}));
-vi.mock('@/lib/family-mission/tasks-relay',()=>({taskSnapshot:vi.fn()}));
+vi.mock('@/lib/family-mission/google-tasks',()=>({taskSnapshot:vi.fn()}));
 beforeEach(()=>{vi.mocked(requireCalendarSyncRouteAuth).mockResolvedValue({authorized:true,kind:'email'} as any);vi.mocked(taskSnapshot).mockReset();});
 const digest=(date:string)=>GET(new NextRequest('https://dashboard.test/api/family/completion-digest?date='+date));
 it.each(['','2026-02-30','2026-13-01','2026-2-01','bad','2026-09-25T00:00:00Z'])('rejects invalid date %s before storage',async date=>{expect((await digest(date)).status).toBe(400);expect(taskSnapshot).not.toHaveBeenCalled();});
@@ -25,7 +25,7 @@ it.each([
  expect((await digest(day)).status).toBe(200);
 });
 it('fails closed when the task snapshot is unavailable',async()=>{vi.mocked(taskSnapshot).mockRejectedValue(new Error('stale'));expect((await digest('2026-10-01')).status).toBe(503);});
-it('preserves historical records and audits across provenance and additive relay migrations',()=>{
+it('preserves historical records and audits across provenance and relay retirement migrations',()=>{
  const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');const db=new DatabaseSync(':memory:');
- try{const migration=(name:string)=>db.exec(readFileSync(new URL('../../migrations/'+name,import.meta.url),'utf8'));migration('0001_family_mission.sql');db.prepare('INSERT INTO family_audit(record_id,action,after_data,occurred_at) VALUES(?,?,?,?)').run('old','create','{"private":"unchanged"}','2026-09-25T00:00:00.000Z');db.prepare('INSERT INTO family_records(id,kind,data,created_at,updated_at) VALUES(?,?,?,?,?)').run('old-task','task','{"notes":"keep history"}','old','old');const audit=db.prepare('SELECT * FROM family_audit').get();const rows=db.prepare('SELECT * FROM family_records').all();migration('0006_completion_provenance.sql');migration('0008_google_tasks_relay.sql');migration('0009_google_tasks_fences.sql');expect(db.prepare('SELECT * FROM family_audit').get()).toEqual({...audit,completion_mode:null,completion_channel:null});expect(db.prepare('SELECT * FROM family_records').all()).toEqual(rows);expect(()=>db.exec("UPDATE family_audit SET completion_mode='guessed'")).toThrow();expect(()=>db.exec("UPDATE family_audit SET completion_channel='sms'")).toThrow();}finally{db.close();}
+ try{const migration=(name:string)=>db.exec(readFileSync(new URL('../../migrations/'+name,import.meta.url),'utf8'));migration('0001_family_mission.sql');db.prepare('INSERT INTO family_audit(record_id,action,after_data,occurred_at) VALUES(?,?,?,?)').run('old','create','{"private":"unchanged"}','2026-09-25T00:00:00.000Z');db.prepare('INSERT INTO family_records(id,kind,data,created_at,updated_at) VALUES(?,?,?,?,?)').run('old-task','task','{"notes":"keep history"}','old','old');const audit=db.prepare('SELECT * FROM family_audit').get();const rows=db.prepare('SELECT * FROM family_records').all();migration('0006_completion_provenance.sql');migration('0008_google_tasks_relay.sql');migration('0009_google_tasks_fences.sql');migration('0010_drop_google_tasks_relay.sql');migration('0010_drop_google_tasks_relay.sql');expect(db.prepare("SELECT name FROM sqlite_master WHERE name LIKE 'google_tasks_%'").all()).toEqual([]);expect(db.prepare('SELECT * FROM family_audit').get()).toEqual({...audit,completion_mode:null,completion_channel:null});expect(db.prepare('SELECT * FROM family_records').all()).toEqual(rows);expect(()=>db.exec("UPDATE family_audit SET completion_mode='guessed'")).toThrow();expect(()=>db.exec("UPDATE family_audit SET completion_channel='sms'")).toThrow();}finally{db.close();}
 });

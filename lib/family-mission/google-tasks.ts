@@ -474,3 +474,7 @@ export async function deleteTask(id: string, revision?: number) {
         return { ok: true };
     });
 }
+
+export async function taskSnapshot() {
+    return {records: await listTasks(), store: 'google-tasks', mirror: false, refreshedAt: new Date().toISOString()};
+}

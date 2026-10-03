@@ -1,5 +1,5 @@
 import 'server-only';
-import {taskSnapshot} from './tasks-relay';
+import {taskSnapshot} from './google-tasks';
 import {validDigestDate} from './digest-model';
 
 const madridOffset=new Intl.DateTimeFormat('en',{timeZone:'Europe/Madrid',timeZoneName:'longOffset'});
@@ -21,5 +21,5 @@ export async function readCompletionDigest(date:string){
  const start=midnight(utcDate),end=midnight(utcDate+dayMilliseconds);
  const {records}=await taskSnapshot();
  const inferred=records.filter((r:any)=>r.status==='done'&&r.completedAt>=start&&r.completedAt<end).map((r:any)=>({id:r.id,title:r.title,owner:r.owner,completedAt:r.completedAt,channel:'other'})).sort((a:any,b:any)=>a.completedAt.localeCompare(b.completedAt));
- return {date,explicit:[],inferred,store:'google-tasks',mirror:true};
+ return {date,explicit:[],inferred,store:'google-tasks',mirror:false};
 }

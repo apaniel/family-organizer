@@ -27,3 +27,4 @@
 @media(max-width:420px){.mc-attention-actions{gap:6px;grid-template-columns:repeat(2,minmax(0,1fr))}.mc-attention-actions button:last-child:nth-child(odd){grid-column:1 / -1}.mc-attention-actions button{font-size:14px}}
 
 @media(max-width:740px){.mc-sidebar nav{gap:2px}.mc-sidebar nav a{flex:1;min-width:0;padding:6px 3px;font-size:10px;text-align:center;line-height:1.2}}
+.mc-location{padding:18px;margin:12px 0;overflow-wrap:anywhere}.mc-location h2{font-size:18px}.mc-location button,.mc-location summary{cursor:pointer;margin:6px 8px 6px 0}.mc-location small{color:#667085}.mc-location details{padding:8px 0}

@@ -1,6 +1,6 @@
 export type Kind = 'task' | 'event' | 'meal';
 export type FamilyRecord = { id: string; kind: Kind; revision: number; title: string; date: string; endDate?: string;
- time?: string; endTime?: string; owner: string; status: 'open'|'done'|'waiting'|'cancelled'; completionDecision?: 'all'|'partial'; completionParent?: {id:string;revision:number}; category: string; notes: string;
+ googleTaskListId?:string; location?:string; time?: string; endTime?: string; owner: string; status: 'open'|'done'|'waiting'|'cancelled'; completionDecision?: 'all'|'partial'; completionParent?: {id:string;revision:number}; category: string; notes: string;
  checklist: {text:string;done:boolean}[]; audience: 'adults'|'kids'; slot:'lunch'|'dinner'; recurrence:'none'|'daily'|'weekdays'|'weekly'|'yearly';
  source: string; sourceKey?: string; confirmed: boolean; reminderDays: number; updatedAt?: string; readOnly?: boolean; color?: string; foregroundColor?: string; allDay?: boolean };
 export function dateKey(date = new Date()) { return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Madrid'}).format(date); }

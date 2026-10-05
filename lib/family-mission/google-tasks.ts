@@ -191,6 +191,7 @@ async function record(t: Located) {
     return {
         kind: 'task',
         id: t.raw.id,
+        googleTaskListId: t.listId,
         title: t.raw.title || '',
         date: t.raw.due?.slice(0, 10) || '',
         endDate: '',

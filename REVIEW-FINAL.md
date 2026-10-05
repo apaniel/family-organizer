@@ -1,0 +1,51 @@
+# Final independent location review — 2026-10-05
+
+**Code: GO** for the saved places, exact task/event adjunct links, arrival/nearby attention UI and durable offline consumer candidate. B1–B5 are resolved in the inspected code and regression coverage. No substantive remaining code blocker found within this scope.
+
+**Production activation: NO-GO.** A reviewed compatible private sender with durable idempotency and an authorized scheduler hookup/config activation are missing. Code approval permits the parent's feature-branch commit/push/PR review workflow; it does not authorize deployment, migration execution or activation.
+
+## Review scope and independent evidence
+
+Read original `REVIEW.md` and corrected `REPORT.md`, every new file returned by `git ls-files --others --exclude-standard`, and all seven tracked diffs. New files comprise both location API routes, `LocationFeatures.tsx`, location model/store, migration 0011, all nine `ops/location/` files, four focused TypeScript test files, and the report/review documents. Tracked changes comprise CI, MissionControl, CSS, Google Tasks/Calendar adapters, FamilyRecord and the Google Tasks snapshot test. Also inspected `CLAUDE.md`, existing task/auth helpers, verified Access email implementation, familia API helper and deployment/migration detection workflows. No AGENTS.md appeared in the workspace inventory.
+
+The inline claim about reviewer `/root/fresh_review` was treated as unverified history, not substituted for this inspection or execution. Parent-reported 332 npm tests, 34 Python tests, tsc, demo and diffcheck passes remain parent evidence; this review independently establishes only the runs below.
+
+Independent execution:
+
+- `npm test -- test/family-mission/location.test.ts test/family-mission/location-store.test.ts test/family-mission/location-attention.test.ts test/family-mission/location-calendar.test.ts`: **4 files / 16 tests passed**, 3.50 seconds.
+- Python unittest discovery of `ops/location`, with `PYTHONDONTWRITEBYTECODE=1` and an audit guard: **34 tests passed**, 24.042 seconds. Guard rejected actual `/opt/hermes-health` and `api_child.py` subprocess launches and parent-process socket connections. Runner launches required offline fixtures; wrapper integration configs were inspected to contain local fixture paths. Child fixtures import no credentials or network adapters. The broker adapter test mocks `runner.run_process` and never invokes the broker. Actual wrapper/runner tests launch temporary local broker/API fixture and mock-sender processes, not production adapters.
+- `git diff --check`: passed. Original `REVIEW.md` SHA-256 remains `66b0636fc0f6fde32d89b647b0a33ffea6d5e15ac76a6261ad8dcbc3158abe6d`.
+
+Only `REVIEW-FINAL.md` was authored. Tests use temporary local SQLite/files/processes; no implementation edits, installation, real broker access, network writes, messages, commit, push, PR, migration or deployment were performed. No browser automation, live auth, live D1 or live transport validation is asserted.
+
+## B1–B5 assessment
+
+| Finding | Inspected correction and independently passing regression evidence |
+| --- | --- |
+| B1 durable retries | `ops/location/runner.py:122` commits each increment, stable episode key, unique claim token, 30-second lease and retry deadline before sender invocation; commits outcomes individually under the same token. Expired claims serialize through BEGIN IMMEDIATE, and three attempts include crashes. `test_review.py` covers late-batch SystemExit, reopening, bounded recovery and concurrent expired-claim recovery; `test_runner.py` covers retries/dedupe. External exactly-once delivery still requires durable sender dedupe. |
+| B2 revisions/interleavings | `runner.py:58` invalidates mismatched transition revisions before fix ordering, compares rule revision first and place revision within that rule, and preserves newer/absent-rule evidence. Publication requires matching persisted revision; candidate arrival also requires matching inside evidence and timestamp. Tests cover place edits with repeated/older fixes, resumed stale consumers, outside evidence interleaved during sending, relinking to a lower-revision place, newer notices under stale/absent metadata and preservation of newly created transitions. Missing metadata defers rather than masquerading as a deletion tombstone. |
+| B3 retention | `runner.py:53`, `runner.py:153` and runner finally cleanup purge raw fixes at 300 seconds and target cache at 60 seconds independently of available fixes/metadata. `scheduled_cycle.py:7` cleans existing state on disabled/throttled paths. Tests cover missing/empty metadata, missing fixes, interval throttle and disabled wrapper cleanup. secure_delete and attempted WAL truncation improve physical cleanup; invocation-driven retention and snapshot/backup limits are accurately disclosed. |
+| B4 deadline/cancellation | `scheduled_cycle.py:7`, `runner.py:226` and `runner.py:233` share a capped absolute monotonic deadline. Broker/API/sender timeouts are capped by remaining budget; no new send claim begins below 22 seconds remaining. Process-group cleanup handles timeouts and TERM/INT. Tests exercise insufficient-budget no-claim, durable cancellation, actual wrapper/runner canonical mapping with fixtures, timeout descendant termination and external wrapper stop preserving a consumed claim. Ten notices is an upper bound, not an obligation to exceed the budget. |
+| B5 place timezone | `location-model.ts:19` derives local date per place from one instant, and cards use it for inclusive expiry. `LocationFeatures.tsx:22` defaults new-link expiry to the selected place timezone. TypeScript tests cover New York/Tokyo on both sides of midnight; Python expiry uses ZoneInfo. |
+
+## Identity, auth, UI and actual acceptance
+
+`location-model.ts:5` explicitly maps the four currently allowlisted email aliases and fails closed for unknown identities. Existing `tasks-route.ts` requires verified Access identity and same-origin browser mutations. Places/links reads and mutation WHERE clauses isolate person; linked place ownership is checked. Service credentials may read metadata but cannot mutate/confirm it. `/api/family/location-attention` accepts only the existing authenticated service, bounds freshness/version/state payloads and rejects arbitrary coordinate fields. Persistence checks person, consent and both revisions; browser reads filter revisions again, preventing obsolete envelopes from appearing after edits. Auth claims were inspected against the cryptographic JWT implementation; focused route tests mock auth rather than proving a deployed identity flow.
+
+Task identity includes exact Google list ID plus task ID in snapshots, browser matching and runtime canonical lookup. Runtime keys are JSON arrays, including adversarial colon-containing IDs. D1 stores normalized target JSON with per-person uniqueness. Missing/moved/deleted targets fail closed; no remapping, task mirror, restored command queue or completion mutation exists. Calendar API/ICS preserve canonical location fields without editing Google events; adjuncts remain separate.
+
+`LocationFeatures.tsx` supplies saved-place CRUD, task/event link editing (including read-only Google event adjuncts), compact derived attention cards and explicit per-rule confirmation. Saving a link defaults disabled. The activation text explicitly confirms use of personal location through expiry and delivery only to Dani's private WhatsApp, including Cris rules. The API requires `confirm:true` and generates confirmation time itself. Enabled-link edits can be saved disabled and subsequently reconfirmed. The browser receives saved-place coordinates for management, but no device fixes or health stream. First inside can trigger nearby, never arrival; arrival requires recent outside-to-inside evidence with accuracy bounds/hysteresis. One-shot and recurring episodes persist and cannot replay merely on edits/restarts. Pure card/API tests and source inspection support these claims; no browser interaction test was run.
+
+Acceptance is the implemented saved-place + exact task/event link + arrival/nearby + compact attention + bounded durable consumer vertical. Departure/leave-on-time, traffic ETA, route optimization and combined-notification batching remain future scope and are not acceptance requirements for this candidate.
+
+## Remaining issues and activation gates
+
+- No approved acknowledged private WhatsApp sender with durable sender-side dedupe exists in this candidate. Offline executable contract tests do not prove live delivery. Provision/review that sender and separately authorize its validation.
+- No authorized scheduler hookup is installed. `ops/location/config.json` remains `enabled:false`, `deliver:false`, `sender:null`. Keep those defaults until explicit activation approval.
+- Consent is fetched fresh once per cycle; revocation/edit can race an in-flight send. Disabled/unconfirmed known revisions cancel pending older notices, but an already claimed external operation cannot be recalled. README describes stopping scheduling, terminating and verifying wrapper/runner/transport descendants while preserving consumed claim state.
+- Calendar API and ICS occurrence IDs differ, so fallback may make links unavailable. Runtime Google Calendar lookup is Madrid today/tomorrow only. Both limits suppress delivery rather than remapping identity.
+- Missing oldest metadata may defer later notices until fresh metadata or five-minute expiry. Retired compact transition/episode evidence is retained without raw coordinates/titles; there is no versioned deletion tombstone. These are conservative, disclosed tradeoffs.
+- Retention occurs on invocation, not an independent timer. Concurrent readers can defer WAL truncation; private state directory, backup/snapshot retention and dedupe preservation need operational ownership.
+- Activation also requires reviewed release/schema application through existing Actions, approved runtime broker/familia permissions, usable device uploads, alias ownership confirmation and real personal rule consent. None was exercised here.
+
+The original five blockers no longer justify a code NO-GO. The missing sender and schedule, plus the operational gates above, continue to justify a separate activation NO-GO.

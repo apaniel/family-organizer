@@ -27,5 +27,7 @@ jobs:
 
       - run: npm test
 
+      - run: python3 -m unittest discover -s ops/location -v
+
       # Builds the Worker bundle exactly as deploys do; needs no Cloudflare credentials.
       - run: npm run build:cloudflare

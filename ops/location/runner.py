@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Bounded deterministic location consumer. Default is preview; never completes tasks."""
-import argparse, importlib.util, json, math, os, sqlite3, subprocess, time, uuid, signal
+import argparse, importlib.util, json, math, os, sqlite3, subprocess, time, uuid, signal, sys
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from state_crypto import open_state, encode, decode
 PRIVATE_DESTINATION='238615548420255@lid'
 BROKER='/opt/hermes-health/client.py'
 PERSONS={'Dani':'dan','Cris':'wife'}
@@ -37,8 +38,7 @@ def target_key(t):return json.dumps(['task',t['listId'],t['id']] if t['kind']=='
 
 class Engine:
  def __init__(self,path):
-  path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
-  self.db=sqlite3.connect(path,timeout=10,isolation_level=None);os.chmod(path,0o600)
+  self.db,self.cipher=open_state(path)
   self.db.executescript('''PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON;
    CREATE TABLE IF NOT EXISTS fixes(person TEXT PRIMARY KEY, recorded REAL, received REAL, data TEXT);
    CREATE TABLE IF NOT EXISTS transitions(rule TEXT PRIMARY KEY, revision INTEGER, inside INTEGER, episode INTEGER, recorded REAL);
@@ -46,9 +46,14 @@ class Engine:
    CREATE TABLE IF NOT EXISTS episodes(key TEXT PRIMARY KEY, rule TEXT);
    CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, fetched REAL, data TEXT);
   ''')
-  columns={r[1] for r in self.db.execute('PRAGMA table_info(deliveries)')}
-  for name,kind in [('claim','TEXT'),('lease_until','REAL DEFAULT 0')]:
-   if name not in columns:self.db.execute('ALTER TABLE deliveries ADD COLUMN '+name+' '+kind)
+  self.db.execute('BEGIN IMMEDIATE')
+  try:
+   columns={r[1] for r in self.db.execute('PRAGMA table_info(deliveries)')}
+   for name,kind in [('claim','TEXT'),('lease_until','REAL DEFAULT 0')]:
+    if name not in columns:self.db.execute('ALTER TABLE deliveries ADD COLUMN '+name+' '+kind)
+   self.db.execute('COMMIT')
+  except BaseException:
+   self.db.execute('ROLLBACK');self.db.close();raise
  def close(self):self.db.close()
  def cleanup(self,now):
   self.db.execute('DELETE FROM fixes WHERE recorded<=?',(now-MAX_AGE,))
@@ -112,10 +117,10 @@ class Engine:
     message=('Al llegar a ' if r['mode']=='arrival' else 'Cerca de ')+p['name']+': '+title[:200]+'. Revísalo en Apalas; sigue pendiente hasta que lo completes.'
     cur=self.db.execute('INSERT OR IGNORE INTO episodes VALUES(?,?)',(key,r['id']))
     if cur.rowcount:
-     self.db.execute('INSERT INTO deliveries(key,rule,rule_revision,place_revision,message,created,next_try) VALUES(?,?,?,?,?,?,?)',(key,r['id'],r['revision'],p['revision'],message,now,now))
+     self.db.execute('INSERT INTO deliveries(key,rule,rule_revision,place_revision,message,created,next_try) VALUES(?,?,?,?,?,?,?)',(key,r['id'],r['revision'],p['revision'],encode(self.cipher,key,message),now,now))
      result.append({'key':key,'rule':r['id'],'message':message})
    for person,f in accepted.items():
-    minimal={k:f[k] for k in ('latitude','longitude','accuracy','timezone','version')}
+    minimal={}
     self.db.execute('INSERT OR REPLACE INTO fixes VALUES(?,?,?,?)',(person,timestamp(f['recorded_at']),timestamp(f['received_at']),json.dumps(minimal)))
    self.db.execute('COMMIT' if commit else 'ROLLBACK');return result
   except Exception:self.db.execute('ROLLBACK');raise
@@ -129,6 +134,7 @@ class Engine:
     row=self.db.execute("SELECT key,rule,rule_revision,place_revision,message,created,attempts FROM deliveries WHERE status='pending' AND next_try<=? AND attempts<3 ORDER BY created,key LIMIT 1",(now,)).fetchone()
     if not row:self.db.execute('COMMIT');break
     key,rid,rr,pr,message,created,attempts=row
+    message=decode(self.cipher,key,message)
     r=next((r for r in rules if r['id']==rid),None);p=next((p for p in places if r and p['id']==r['placeId'] and p['person']==r['person']),None)
     if (not r or not p) and now-created<MAX_AGE:
      self.db.execute('COMMIT');break
@@ -178,13 +184,8 @@ def cycle(engine,fetch,broker,status_reader,sender,now,deliver=False,publish=Non
    stamp=datetime.fromtimestamp(now,timezone.utc).isoformat();until=datetime.fromtimestamp(now+MAX_AGE,timezone.utc).isoformat()
    publish({'items':[{'ruleId':r['id'],'person':r['person'],'ruleRevision':r['revision'],'placeRevision':next(p['revision'] for p in places if p['id']==r['placeId']),'state':'unavailable','observedAt':stamp,'validUntil':until,'version':1} for r in rules]})
   return {'candidates':0,'available':[]}
- cached=engine.db.execute("SELECT fetched,data FROM cache WHERE key='targets'").fetchone()
  keys={target_key(r['target']) for r in rules}
- if cached and 0<=now-cached[0]<60 and keys.issubset(json.loads(cached[1])):
-  statuses=json.loads(cached[1])
- else:
-  statuses={k:v for k,v in status_reader().items() if k in keys}
-  if deliver:engine.db.execute("INSERT OR REPLACE INTO cache VALUES('targets',?,?)",(now,json.dumps(statuses)))
+ statuses={k:v for k,v in status_reader().items() if k in keys}
  now=clock() if clock else now
  candidates=engine.evaluate(places,metadata['links'],fixes,now,statuses,commit=deliver)
  if deliver:
@@ -206,7 +207,7 @@ def cycle(engine,fetch,broker,status_reader,sender,now,deliver=False,publish=Non
 
 def broker_latest(person,tz,budget=None,fixture=None):
  # Fixed read-only route: no health history, credentials, or backend URL.
- command=['python3',str(Path(__file__).with_name('fixture_child.py')),str(fixture),'broker',person] if fixture else ['python3',BROKER,'where',PERSONS[person],'--tz',tz]
+ command=[sys.executable,str(Path(__file__).with_name('fixture_child.py')),str(fixture),'broker',person] if fixture else [sys.executable,BROKER,'where',PERSONS[person],'--tz',tz]
  r=run_process(command,capture_output=True,text=True,timeout=50,budget=budget,check=True)
  d=json.loads(r.stdout);loc=d.get('location')
  if d.get('ok') is not True or d.get('person')!=PERSONS[person] or not loc:return None
@@ -266,7 +267,7 @@ def main():
   engine.db.execute("INSERT OR REPLACE INTO cache VALUES('cycle',?,'{}')",(now,));engine.db.execute('COMMIT')
   metadata={}
   def api(path,method='GET',payload=None):
-   command=(['python3',str(Path(__file__).with_name('fixture_child.py')),str(args.offline_fixture),'api',path] if args.offline_fixture else ['python3',str(Path(__file__).with_name('api_child.py')),path,method])
+   command=([sys.executable,str(Path(__file__).with_name('fixture_child.py')),str(args.offline_fixture),'api',path] if args.offline_fixture else [sys.executable,str(Path(__file__).with_name('api_child.py')),path,method])
    return json.loads(run_process(command,input=json.dumps(payload),text=True,capture_output=True,timeout=45,budget=budget,check=True).stdout)
   def fetch():
    # Consent is read fresh on every bounded invocation; never deliver from stale consent.
@@ -287,7 +288,7 @@ def main():
    for r in d['records']:
     if r['kind']=='event':result[target_key({'kind':'event','id':r['id']})]={'status':r['status'],'title':r['title']}
    return result
-  def send(destination,message,key):run_process([str(args.sender)],input=json.dumps({'destination':destination,'message':message,'idempotency_key':key}),text=True,capture_output=True,timeout=20,budget=budget,check=True)
+  def send(destination,message,key):run_process(([sys.executable,str(args.sender)] if args.sender.suffix=='.py' else [str(args.sender)]),input=json.dumps({'destination':destination,'message':message,'idempotency_key':key}),text=True,capture_output=True,timeout=20,budget=budget,check=True)
   def publish(payload):
    for start in range(0,len(payload['items']),100):api('location-attention','POST',{'items':payload['items'][start:start+100]})
   print(json.dumps(cycle(engine,fetch,lambda p,t:broker_latest(p,t,budget,args.offline_fixture),statuses,send,now,args.deliver,publish,time.time,budget)))

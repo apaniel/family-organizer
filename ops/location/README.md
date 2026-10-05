@@ -25,8 +25,9 @@ installation or service restart belongs to these scripts.
 Only after independent review, a reviewed PR merge to main and existing deployment
 Actions may apply `0011_location_adjuncts.sql` and deploy the Worker/UI. The existing
 familia helper provides narrowly scoped family API access; the consumer imports
-`../familia/family_mission.py` and never reads/copies its credentials itself. Use the
-existing family-profile Python environment (which already supplies python-dotenv).
+`../familia/family_mission.py` and never reads/copies its credentials itself. Use `/home/hermes/.hermes/hermes-agent/venv/bin/python`, which supplies
+python-dotenv. The cron runs in default scope; only the bounded API child selects
+the existing familia helper scope, without profile/config writes.
 No Cloudflare token is accepted by these scripts.
 
 `runner.py --state ABSOLUTE_PATH` is a read-only preview against the scoped family
@@ -50,9 +51,11 @@ Reviewed activation must establish all of the following:
    object from stdin: `{destination,message,idempotency_key}`. It must allow only
    Dani's private destination, durably dedupe the key, return zero only when delivery
    is acknowledged/already acknowledged, and keep all payloads out of debug logs.
-   This repo has no compatible approved WhatsApp sender, so its provisioning is an
-   explicit remaining activation gate. The executable adapter contract and offline
-   mock are tested; no live sender or live delivery is claimed.
+   `private_sender.py` now implements this contract against the reviewed plugin
+   extension `/family/private-notice`. Its durable transport journal reserves one
+   protocol message ID before sending and requires an exact recipient receipt.
+   Uncertain attempts reconcile without resending. Both branches still require
+   independent review and release; no live sender or delivery is claimed.
 4. The approved scheduler calls `scheduled_cycle.py --config REVIEWED_CONFIG` as a
    one-shot invocation. Configure `enabled:true` only at that approved activation.
    Default interval is 300s; allowed range 300–3600s; a durable scheduler guard skips
@@ -89,9 +92,12 @@ Expiry is inclusive through the rule's local calendar day in its place timezone.
 Only fresh canonical open/waiting targets are eligible; Google task list+task ID is
 the exact identity. Google moves/deletions are not auto-remapped or duplicated.
 
-SQLite keeps one minimal last fix per person (purged after five minutes), one latest
-transition per rule, compact episode keys, delivery acknowledgements and minimal
-canonical eligibility/title cache (60s). No location trail. Sent/cancelled/failed
+SQLite keeps only last-fix timestamps per person (purged after five minutes), one
+latest transition per rule, compact episode keys and delivery acknowledgements.
+Coordinates and canonical title caches are not persisted. Exact durable reminders
+use cryptography Fernet authenticated encryption with a local per-state key. Legacy
+plaintext state fails closed; see ACTIVATION.md for upgrade and backup boundaries.
+Sent/cancelled/failed
 message rows expire after 30 days; episode dedupe keys remain. At most ten pending
 notices are processed per invocation, at most three sender attempts per notice,
 with 60/120s backoff and five-minute delivery expiry. Sender-side durable idempotency
@@ -157,3 +163,20 @@ Missing rule/place metadata defers pending notices until delivery expiry; known
 disabled/unconfirmed rule revisions cancel eligible older pending notices immediately.
 A missing oldest notice can conservatively hold later delivery work until the next
 fresh snapshot or expiry. Neither absence nor deferral authorizes an external send.
+
+
+## Concrete local runtime release
+
+See [ACTIVATION.md](ACTIVATION.md) for exact paths, disabled release preparation,
+the default-scope five-minute no-agent CLI command, and ordered activation gates.
+The cron entry invokes the approved Python interpreter with `--quiet`; successful
+empty cycles produce no stdout. Both cron success/failure delivery targets are
+`local`, preventing a second WhatsApp delivery. Runtime state now belongs to the
+default home at `/home/hermes/.hermes/state/location`, not a familia profile file.
+Tests execute the actual wrapper, existing helper, canonical API reader, broker
+CLI source and sender with network/credential guards and synthetic responses.
+
+Transport acknowledgements mean a durable recipient delivery/read receipt, not
+a completed socket promise. Crash/timeout uncertainty never triggers another
+socket send for the same key. Some notices can remain unresolved or be lost;
+there is no exactly-once delivery claim. Preserve both journals across rollback.

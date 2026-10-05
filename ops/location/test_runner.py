@@ -96,7 +96,7 @@ class Tests(unittest.TestCase):
   import json
   with patch('runner.run_process',return_value=SimpleNamespace(stdout=json.dumps(payload))) as call:
    value=broker_latest('Dani','Europe/Madrid');self.assertEqual(value['person'],'Dani');self.assertEqual(value['version'],1)
-   self.assertEqual(call.call_args.args[0],['python3','/opt/hermes-health/client.py','where','dan','--tz','Europe/Madrid'])
+   self.assertEqual(call.call_args.args[0],[__import__('sys').executable,'/opt/hermes-health/client.py','where','dan','--tz','Europe/Madrid'])
   with patch('runner.run_process',return_value=SimpleNamespace(stdout=json.dumps({**payload,'person':'wife'}))):self.assertIsNone(broker_latest('Dani','Europe/Madrid'))
   with patch('runner.run_process',return_value=SimpleNamespace(stdout='{"ok":true,"person":"wife","location":null}')):self.assertIsNone(broker_latest('Cris','Europe/Madrid'))
  def test_scheduler_cycle_end_to_end_offline_private_states(self):

@@ -2,6 +2,6 @@
   "enabled": false,
   "deliver": false,
   "interval_seconds": 300,
-  "state": "/home/hermes/.hermes/profiles/familia/state/location-reminders.sqlite",
+  "state": "/home/hermes/.hermes/state/location/location-reminders.sqlite",
   "sender": null
 }

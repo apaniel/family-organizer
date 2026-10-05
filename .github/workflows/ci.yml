@@ -27,7 +27,19 @@ jobs:
 
       - run: npm test
 
+      - run: python3 -m pip install -r ops/location/requirements.txt
+
       - run: python3 -m unittest discover -s ops/location -v
 
       # Builds the Worker bundle exactly as deploys do; needs no Cloudflare credentials.
       - run: npm run build:cloudflare
+
+      - name: Prepare disabled local runtime release
+        run: python3 ops/location/prepare-release.py location-runtime-release
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: location-runtime-disabled
+          path: location-runtime-release.tar
+          retention-days: 30

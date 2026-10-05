@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """One bounded scheduler invocation. No installs, background loop or service changes."""
-import argparse,json,subprocess,time,signal,os
+import argparse,json,subprocess,time,signal,os,sys
 from pathlib import Path
 from runner import Engine, run_process, Budget, ACTIVE_CHILDREN
 
@@ -25,7 +25,7 @@ def run(config,invoke=None,now=None):
   if last and now-last[0]<interval:engine.db.execute('ROLLBACK');return {'skipped':'interval'}
   engine.db.execute("INSERT OR REPLACE INTO cache VALUES('scheduler',?,'{}')",(now,));engine.db.execute('COMMIT')
  finally:engine.close()
- command=['python3',str(Path(__file__).with_name('runner.py')),'--state',state]
+ command=[sys.executable,str(Path(__file__).with_name('runner.py')),'--state',state]
  command+=['--deadline',str(budget.deadline)]
  if config.get('offline_fixture'):command+=['--offline-fixture',config['offline_fixture']]
  if config.get('deliver'):command+=['--deliver','--sender',config['sender']]
@@ -43,6 +43,8 @@ def stop_runner(signum,frame):
 
 if __name__=='__main__':
  signal.signal(signal.SIGTERM,stop_runner);signal.signal(signal.SIGINT,stop_runner)
- parser=argparse.ArgumentParser();parser.add_argument('--config',type=Path,default=Path(__file__).with_name('config.json'));args=parser.parse_args()
- try:print(json.dumps(run(json.loads(args.config.read_text()))))
+ parser=argparse.ArgumentParser();parser.add_argument('--config',type=Path,default=Path(__file__).with_name('config.json'));parser.add_argument('--quiet',action='store_true');args=parser.parse_args()
+ try:
+  result=run(json.loads(args.config.read_text()))
+  if not args.quiet:print(json.dumps(result))
  except Exception:print('{"error":"Scheduled cycle unavailable"}');raise SystemExit(1)

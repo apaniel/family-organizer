@@ -1,4 +1,4 @@
-import json,os,tempfile,time,unittest,signal
+import json,os,tempfile,time,unittest,signal,sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from runner import Engine,cycle,target_key,Budget,run_process
@@ -75,6 +75,8 @@ class ReviewTests(unittest.TestCase):
   script.write_text('import subprocess,time\np=subprocess.Popen(["sleep","30"])\nopen('+repr(str(pidfile))+',"w").write(str(p.pid))\ntime.sleep(30)\n')
   with self.assertRaises(Exception):run_process(['python3',str(script)],timeout=.3)
   pid=int(pidfile.read_text());stat=Path('/proc')/str(pid)/'stat'
+  deadline=time.monotonic()+1
+  while stat.exists() and stat.read_text().split()[2]!='Z' and time.monotonic()<deadline:time.sleep(.01)
   self.assertTrue(not stat.exists() or stat.read_text().split()[2]=='Z')
  def test_wrapper_cli_timeout_cancels_runner_and_sender_descendants(self):
   import subprocess
@@ -83,7 +85,7 @@ class ReviewTests(unittest.TestCase):
   pidfile=Path(self.tmp.name)/'descendant';sender=Path(self.tmp.name)/'slow-sender'
   sender.write_text('#!/usr/bin/env python3\nimport subprocess,time\np=subprocess.Popen(["sleep","90"])\nopen('+repr(str(pidfile))+',"w").write(str(p.pid))\ntime.sleep(90)\n');sender.chmod(0o700)
   cfg=Path(self.tmp.name)/'config';cfg.write_text(json.dumps({'enabled':True,'deliver':True,'state':str(self.path),'sender':str(sender),'offline_fixture':str(fixture),'budget_seconds':23}))
-  result=subprocess.run(['python3',str(Path(__file__).with_name('scheduled_cycle.py')),'--config',str(cfg)],capture_output=True,text=True,timeout=28)
+  result=subprocess.run([sys.executable,str(Path(__file__).with_name('scheduled_cycle.py')),'--config',str(cfg)],capture_output=True,text=True,timeout=28)
   self.assertIn(result.returncode,[0,1]);self.assertTrue(pidfile.exists())
   stat=Path('/proc')/pidfile.read_text()/'stat'
   self.assertTrue(not stat.exists() or stat.read_text().split()[2]=='Z')
@@ -95,7 +97,7 @@ class ReviewTests(unittest.TestCase):
   pidfile=Path(self.tmp.name)/'descendant';sender=Path(self.tmp.name)/'sender'
   sender.write_text('#!/usr/bin/env python3\nimport subprocess,time\np=subprocess.Popen(["sleep","90"])\nopen('+repr(str(pidfile))+',"w").write(str(p.pid))\ntime.sleep(90)\n');sender.chmod(0o700)
   cfg=Path(self.tmp.name)/'config';cfg.write_text(json.dumps({'enabled':True,'deliver':True,'state':str(self.path),'sender':str(sender),'offline_fixture':str(fixture)}))
-  proc=subprocess.Popen(['python3',str(Path(__file__).with_name('scheduled_cycle.py')),'--config',str(cfg)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  proc=subprocess.Popen([sys.executable,str(Path(__file__).with_name('scheduled_cycle.py')),'--config',str(cfg)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   try:
    deadline=time.monotonic()+5
    while not pidfile.exists() and time.monotonic()<deadline:time.sleep(.02)

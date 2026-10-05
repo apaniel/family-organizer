@@ -1,0 +1,9 @@
+{
+  "name": "location-private-checker",
+  "schedule": "*/5 * * * *",
+  "script": "location-private-checker.sh",
+  "no_agent": true,
+  "deliver": "local",
+  "failure_deliver": "local",
+  "profile": "default"
+}

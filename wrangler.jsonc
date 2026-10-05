@@ -33,12 +33,6 @@
       "bucket_name": "family-mission-documents"
     }
   ],
-  "routes": [
-    {
-      "pattern": "apalas.apaniel.dev",
-      "custom_domain": true
-    }
-  ],
   "d1_databases": [
     {
       "binding": "FAMILY_DB",

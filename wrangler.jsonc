@@ -33,9 +33,6 @@
       "bucket_name": "family-mission-documents"
     }
   ],
-  // apalas.apaniel.dev is attached to this Worker as a custom domain in Cloudflare.
-  // Declaring it here makes every deploy read the zone's Workers Routes, which the
-  // CI token is not scoped for, so the deploy step failed after each upload.
   "d1_databases": [
     {
       "binding": "FAMILY_DB",

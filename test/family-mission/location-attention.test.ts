@@ -1,0 +1,14 @@
+import {beforeEach,it,expect,vi} from 'vitest';
+import {NextRequest} from 'next/server';
+vi.mock('@/lib/calendar-sync-auth',()=>({requireCalendarSyncRouteAuth:vi.fn()}));
+vi.mock('@/lib/family-mission/location-store',()=>({saveAttention:vi.fn()}));
+import {requireCalendarSyncRouteAuth} from '@/lib/calendar-sync-auth';
+import {saveAttention} from '@/lib/family-mission/location-store';
+import {POST} from '@/app/api/family/location-attention/route';
+import {locationCards} from '@/lib/family-mission/location-model';
+const now=Date.now();const item={ruleId:'r',person:'Dani',ruleRevision:1,placeRevision:1,state:'nearby',observedAt:new Date(now-1000).toISOString(),validUntil:new Date(now+60000).toISOString(),version:1};
+const request=(items:any[])=>new NextRequest('https://apalas.apaniel.dev/api/family/location-attention',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items})});
+beforeEach(()=>vi.mocked(requireCalendarSyncRouteAuth).mockResolvedValue({authorized:true,kind:'service'}));
+it('requires authenticated existing service scope and rejects email writes',async()=>{vi.mocked(requireCalendarSyncRouteAuth).mockResolvedValue({authorized:false,kind:'email'});expect((await POST(request([item]))).status).toBe(401);vi.mocked(requireCalendarSyncRouteAuth).mockResolvedValue({authorized:true,kind:'email'});expect((await POST(request([item]))).status).toBe(403);expect(saveAttention).not.toHaveBeenCalled();});
+it('accepts only fresh, bounded derived states; rejects coordinates, wrong versions and stale data',async()=>{expect((await POST(request([item]))).status).toBe(200);expect(saveAttention).toHaveBeenCalledWith([item]);for(const patch of [{latitude:40},{version:2},{observedAt:new Date(now-600000).toISOString()},{validUntil:new Date(now+600000).toISOString()},{state:'completed'}])expect((await POST(request([{...item,...patch}]))).status).toBe(400);});
+it('expires cards without inventing recent location or completion',()=>{const p={id:'p',revision:1,name:'Tienda',latitude:0,longitude:0,radius:100,person:'Dani' as const,timezone:'Europe/Madrid'};const l={id:'r',revision:1,placeId:'p',person:'Dani' as const,target:{kind:'event' as const,id:'e'},mode:'nearby' as const,recurring:false,expires:'2026-10-05',enabled:true};const r={id:'e',kind:'event',title:'Plan',status:'open'};const a={ruleId:'r',state:'nearby' as const,observedAt:item.observedAt,validUntil:item.validUntil};expect(locationCards([p],[l],[r],now,[a])[0].status).toBe('Recado cercano · pendiente');expect(locationCards([p],[l],[r],now+60001,[a])[0].status).toBe('Ubicación reciente no disponible');});

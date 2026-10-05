@@ -97,6 +97,11 @@ def extract_release(test, source, destination):
             test.assertEqual(member.mode, mode)
             test.assertEqual((member.uid, member.gid, member.mtime), (0, 0, 0))
         tar.extractall(destination, filter='data')
+        # The data filter does not restore directory modes on every Python version
+        # (3.12 leaves them at the umask default), so the installer sets them itself.
+        for member in tar.getmembers():
+            if member.isdir():
+                (destination/member.name).chmod(member.mode)
     for name in expected:
         test.assertEqual((destination/name).stat().st_mode & 0o777, (source/name).stat().st_mode & 0o777)
     return destination

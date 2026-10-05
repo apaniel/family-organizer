@@ -91,8 +91,9 @@ anything on the host. The built-in `.py` sender runs with that same interpreter;
 generic executable senders retain direct invocation compatibility. CI uploads
 `location-runtime-release.tar`, which contains only the source allowlist and a
 disabled config. A downloaded tar may have mode 0644; extracting this reviewed
-archive restores its explicit member modes (entry 0700, config 0600, source 0644,
-directories 0700). Validate the member allowlist and reject links/traversal before
+archive restores its explicit file modes (entry 0700, config 0600, source 0644).
+Directory modes (0700) are not restored by every Python's `data` filter, so the
+installer must chmod each extracted directory to its member mode. Validate the member allowlist and reject links/traversal before
 extracting into a new private review directory. The reviewed installer must explicitly set and verify
 `cron-entry.sh` at its installed scripts path to mode 0700, runtime source to 0600
 or 0644, external config to 0600 and state directory to 0700. Check these modes

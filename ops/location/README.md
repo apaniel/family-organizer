@@ -1,3 +1,5 @@
+> Current canonical authoring and activation contract: [UNIFIED-IMPLEMENTATION.md](UNIFIED-IMPLEMENTATION.md). Legacy presence configuration/cron examples below are retained for historical compatibility and receipt reconciliation; use the common notes checker for new rules.
+
 > **Current notes flow:** the D1 association/delegation approach is superseded.
 > For the new Google Tasks notes runner, disabled release and installation gate,
 > use [RELEASE-NOTES.md](RELEASE-NOTES.md). The instructions below describe only

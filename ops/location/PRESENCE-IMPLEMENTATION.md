@@ -1,3 +1,5 @@
+> Current canonical authoring and activation contract: [UNIFIED-IMPLEMENTATION.md](UNIFIED-IMPLEMENTATION.md). Legacy presence configuration/cron examples below are retained for historical compatibility and receipt reconciliation; use the common notes checker for new rules.
+
 # Conditional presence implementation
 
 Code-only review on `feat/location-presence-once`, based on fresh origin/main

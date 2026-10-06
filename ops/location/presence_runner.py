@@ -34,24 +34,7 @@ def validate(config):
         raise ValueError('Immutable message required')
 
 
-def presence(fix, fence, now):
-    try:
-        if fix['ok'] is not True or fix['person'] != 'dan':
-            return 'uncertain'
-        loc = fix['location']
-        values = [loc[k] for k in ('lat', 'lon', 'h_acc')]
-        if any(type(v) not in (int, float) or not math.isfinite(v) for v in values):
-            return 'uncertain'
-        lat, lon, accuracy = values
-        ts, received = stamp(loc['ts']), stamp(loc['received_at'])
-        if not all(math.isfinite(v) for v in (ts, received, now)) or not 0 <= ts <= received <= now or not -90 <= lat <= 90 or not -180 <= lon <= 180 or not 0 <= accuracy <= 100:
-            return 'uncertain'
-        if now-ts > 300 or now-received > 300:
-            return 'stale'
-        d = distance(loc, fence)
-        return 'inside' if d+accuracy <= fence['radius'] else 'outside' if d-accuracy > fence['radius'] else 'uncertain'
-    except (KeyError, TypeError, ValueError, OverflowError, AttributeError):
-        return 'uncertain'
+from notes_runner import presence
 
 
 def inspect(config, runtime, clock):

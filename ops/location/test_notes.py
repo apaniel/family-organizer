@@ -175,7 +175,7 @@ class NotesTests(unittest.TestCase):
         self.assertFalse(self.receipts)
 
     def test_empty_malformed_and_user_notes_no_broker_or_sender(self):
-        for notes in ('', 'Please meet me outside and inside.', '[hermes-location:v2]\nbad'):
+        for notes in ('', 'Please meet me outside and inside.'):
             task = {**self.task, 'notes': notes}
             with State(self.path) as state:
                 cycle(state, [task], lambda: self.fail('location read'), lambda _: self.fail('get'), self.sender, NOW)

@@ -17,7 +17,7 @@ def validate(data):
     if not isinstance(data, dict) or set(data) != {'version', 'items'} or type(data['version']) is not int or data['version'] != 1 or not isinstance(data['items'], dict):
         raise ValueError('Invalid ledger')
     for key, item in data['items'].items():
-        if not isinstance(key, str) or not re.fullmatch('[0-9a-f]{64}', key) or not isinstance(item, dict) or not FIELDS <= set(item) or set(item) - FIELDS - {'outside_at', 'message', 'notice_version'}:
+        if not isinstance(key, str) or not re.fullmatch('[0-9a-f]{64}', key) or not isinstance(item, dict) or not FIELDS <= set(item) or set(item) - FIELDS - {'outside_at', 'message', 'notice_version', 'evaluated_at', 'due_at', 'outcome', 'invalid_rule', 'legacy_body'}:
             raise ValueError('Invalid ledger item')
         if any(not isinstance(item[k], str) or not item[k] for k in ('listId', 'id', 'fingerprint')) or not re.fullmatch('[0-9a-f]{64}', item['fingerprint']):
             raise ValueError('Invalid ledger identity')
@@ -30,6 +30,14 @@ def validate(data):
             if (not isinstance(item.get('message'), str) or not 1 <= len(item['message']) <= 2000
                     or item.get('notice_version') != 1 or item['episode'] != 1):
                 raise ValueError('Invalid immutable notice')
+        if 'invalid_rule' in item and item['invalid_rule'] is not True:
+            raise ValueError('Invalid error obligation')
+        if 'legacy_body' in item:
+            from presence_state import validate as validate_legacy
+            validate_legacy({'version': 1, 'claim': {'body': item['legacy_body'], 'status': 'unknown'}})
+        if 'evaluated_at' in item:
+            if any(type(item.get(k)) not in (int, float) or not math.isfinite(item[k]) or item[k] < 0 for k in ('evaluated_at', 'due_at')) or item['evaluated_at'] < item['due_at'] or item.get('outcome') not in ('inside', 'inferred_inside', 'outside', 'stale', 'uncertain', 'legacy_consumed'):
+                raise ValueError('Invalid timed evaluation')
         if 'outside_at' in item and (type(item['outside_at']) not in (int, float) or not math.isfinite(item['outside_at']) or not 0 <= item['outside_at'] <= item['lastfix']):
             raise ValueError('Invalid outside evidence')
         if type(item['lastfix']) not in (int, float) or not math.isfinite(item['lastfix']) or item['lastfix'] < 0:

@@ -96,7 +96,7 @@ class ReviewTests(unittest.TestCase):
   fixture=Path(self.tmp.name)/'fixture';fixture.write_text(json.dumps({'metadata':{'places':[P],'links':[r]},'fixes':{'Dani':fix(20,now)},'statuses':S}))
   pidfile=Path(self.tmp.name)/'descendant';sender=Path(self.tmp.name)/'slow-sender'
   sender.write_text('#!/usr/bin/env python3\nimport subprocess,time\np=subprocess.Popen(["sleep","90"])\nopen('+repr(str(pidfile))+',"w").write(str(p.pid))\ntime.sleep(90)\n');sender.chmod(0o700)
-  cfg=Path(self.tmp.name)/'config';cfg.write_text(json.dumps({'enabled':True,'deliver':True,'state':str(self.path),'sender':str(sender),'offline_fixture':str(fixture),'budget_seconds':23}))
+  cfg=Path(self.tmp.name)/'config';cfg.write_text(json.dumps({'enabled':True,'deliver':True,'state':str(self.path),'sender':str(sender),'offline_fixture':str(fixture),'budget_seconds':27}))
   proc=subprocess.Popen([sys.executable,str(Path(__file__).with_name('scheduled_cycle.py')),'--config',str(cfg)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
   try:
    deadline=time.monotonic()+8

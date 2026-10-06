@@ -1,0 +1,18 @@
+{
+  "enabled": false,
+  "state": "/home/hermes/.hermes/state/location-presence/state.json",
+  "sender": "/home/hermes/.hermes/local-customizations/location-runtime/current/ops/location/private_sender.py",
+  "operation_id": "PARENT_CREATES_FRESH_RETRY_HANDLE",
+  "task": {
+    "owner": "Dani",
+    "id": "amRHNnMzTUJaWThCY0ZENg",
+    "listId": "WHh4eXR1cG94dGRueW1VdQ",
+    "sourceKey": "whatsapp:location:rice:laforja63:20261006"
+  },
+  "geofence": {
+    "latitude": 41.3970791,
+    "longitude": 2.1465232,
+    "radius": 100
+  },
+  "message": "🍚 Sigues en casa: acuérdate de hacer arroz."
+}

@@ -19,7 +19,7 @@ def prepare(destination):
              'private_sender.py', 'api_child.py', 'fixture_child.py', 'config.json',
              'cron-entry.sh', 'cron-job.json', 'README.md', 'ACTIVATION.md',
              'google_notes.py', 'notes_state.py', 'notes_runner.py', 'author_notes.py',
-             'notes-config.json', 'notes-cron-entry.sh', 'notes-cron-job.json', 'RELEASE-NOTES.md')
+             'UNIFIED-IMPLEMENTATION.md', 'notes-config.json', 'notes-cron-entry.sh', 'notes-cron-job.json', 'RELEASE-NOTES.md')
     for name in files:
         shutil.copy2(root / 'ops/location' / name, runtime / name)
     (destination / 'ops/familia').mkdir()

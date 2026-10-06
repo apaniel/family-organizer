@@ -46,6 +46,12 @@ class InstallTests(unittest.TestCase):
             subprocess.run(['bash', str(entry)], check=True, capture_output=True)
             presence_config = home/'state/location-presence/config.json'
             presence_state = presence_config.with_name('state.json')
+            self.assertFalse(presence_config.exists())
+            legacy = json.loads((Path(__file__).parent/'presence-config.example.json').read_text())
+            legacy.update(state=str(presence_state), sender=str(home/'local-customizations/location-runtime/current/ops/location/private_sender.py'))
+            presence_config.write_text(json.dumps(legacy)); presence_config.chmod(0o600)
+            presence_state.write_text(json.dumps({'version': 1, 'claim': None})); presence_state.chmod(0o600)
+            INSTALL.install(repo, home, commit)
             presence_bytes = presence_state.read_bytes()
             presence_config_bytes = presence_config.read_bytes()
             self.assertFalse(json.loads(presence_config_bytes)['enabled'])

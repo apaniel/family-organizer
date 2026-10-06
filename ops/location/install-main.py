@@ -25,7 +25,8 @@ def install(repo, home, commit):
     base = home/'local-customizations/location-runtime'
     scripts = home/'scripts'
     private = home/'state/location-notes'
-    for directory in (base, scripts, private):
+    presence = home/'state/location-presence'
+    for directory in (base, scripts, private, presence):
         for ancestor in (directory, *directory.parents):
             if ancestor.is_symlink():
                 raise ValueError('Symlink install ancestor rejected')
@@ -63,6 +64,25 @@ def install(repo, home, commit):
         if data.get('enabled') is not False or data.get('state') != str(private/'state.json'):
             raise ValueError('Disabled new config required')
         subprocess.run([os.sys.executable, str(release/'ops/location/notes_runner.py'), '--config', str(config), '--initialize-state', '--quiet'], check=True)
+    presence_config = presence/'config.json'
+    if not presence_config.exists():
+        data = json.loads((release/'ops/location/presence-config.example.json').read_text())
+        data.update(state=str(presence/'state.json'), sender=str(base/'current/ops/location/private_sender.py'))
+        with presence_config.open('x') as output:
+            os.fchmod(output.fileno(), 0o600); output.write(json.dumps(data, indent=2)+'\n')
+    if presence_config.is_symlink() or not stat.S_ISREG(presence_config.stat().st_mode) or presence_config.stat().st_uid != os.getuid() or presence_config.stat().st_nlink != 1 or presence_config.stat().st_mode & 0o777 != 0o600:
+        raise ValueError('Private regular 0600 presence config required')
+    if not (presence/'state.json').exists():
+        data = json.loads(presence_config.read_text())
+        if data.get('enabled') is not False or data.get('state') != str(presence/'state.json'):
+            raise ValueError('Disabled new presence config required')
+        subprocess.run([os.sys.executable, str(release/'ops/location/presence_runner.py'), '--config', str(presence_config), '--initialize-state'], check=True, capture_output=True)
+    presence_entry = scripts/'location-presence-once.sh'
+    pending_presence = scripts/'.location-presence-once.new'
+    with pending_presence.open('x') as output:
+        os.fchmod(output.fileno(), 0o700)
+        output.write((release/'ops/location/presence-cron-entry.sh').read_text().replace('/home/hermes/.hermes', str(home)))
+    os.replace(pending_presence, presence_entry)
     if (base/'current').exists() and not (base/'current').is_symlink():
         raise ValueError('Existing current must be a symlink')
     entry = scripts/'location-google-notes.sh'

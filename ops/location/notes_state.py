@@ -53,6 +53,9 @@ def unique(items):
 
 
 class State:
+    validator = staticmethod(validate)
+    initial = {"version": 1, "items": {}}
+
     def __init__(self, filename, initialize=False):
         path = Path(filename)
         if not path.is_absolute() or path.name in ('', '.', '..') or '..' in path.parts:
@@ -80,7 +83,7 @@ class State:
             if initialize:
                 output = os.open(self.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fd)
                 try:
-                    os.write(output, b'{"version":1,"items":{}}\n')
+                    os.write(output, (json.dumps(self.initial)+'\n').encode())
                     os.fsync(output)
                 finally:
                     os.close(output)
@@ -89,7 +92,7 @@ class State:
             try:
                 self.check(source)
                 with os.fdopen(source, 'r', closefd=False) as stream:
-                    self.data = validate(json.load(stream, object_pairs_hook=unique))
+                    self.data = self.validator(json.load(stream, object_pairs_hook=unique))
             finally:
                 os.close(source)
         except BaseException:
@@ -103,7 +106,7 @@ class State:
             raise ValueError('Ledger file must be owned regular mode 0600')
 
     def save(self):
-        validate(self.data)
+        self.validator(self.data)
         # Refuse an externally replaced unsafe target as well as unsafe input.
         old = os.open(self.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=self.directory)
         try:

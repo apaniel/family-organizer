@@ -14,6 +14,8 @@ def prepare(destination):
     runtime = destination / 'ops/location'
     runtime.mkdir(parents=True)
     files = ('runner.py', 'state_crypto.py', 'requirements.txt', 'scheduled_cycle.py',
+             'presence_runner.py', 'presence_state.py', 'presence-config.example.json',
+             'presence-cron-entry.sh', 'PRESENCE-IMPLEMENTATION.md',
              'private_sender.py', 'api_child.py', 'fixture_child.py', 'config.json',
              'cron-entry.sh', 'cron-job.json', 'README.md', 'ACTIVATION.md',
              'google_notes.py', 'notes_state.py', 'notes_runner.py', 'author_notes.py',
@@ -30,7 +32,7 @@ def prepare(destination):
     (destination / 'notes-config.json').chmod(0o600)
     # Explicit modes and metadata make the source-only archive reproducible.
     for item in destination.rglob('*'):
-        item.chmod(0o700 if item.is_dir() or item.name in ('cron-entry.sh', 'notes-cron-entry.sh') else
+        item.chmod(0o700 if item.is_dir() or item.name in ('cron-entry.sh', 'notes-cron-entry.sh', 'presence-cron-entry.sh') else
                    0o600 if item in (destination / 'config.json', destination / 'notes-config.json') else 0o644)
     archive = destination.with_name(destination.name + '.tar')
     with archive.open('xb') as output, tarfile.open(fileobj=output, mode='w') as tar:

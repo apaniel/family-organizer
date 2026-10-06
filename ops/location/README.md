@@ -1,3 +1,8 @@
+> **Current notes flow:** the D1 association/delegation approach is superseded.
+> For the new Google Tasks notes runner, disabled release and installation gate,
+> use [RELEASE-NOTES.md](RELEASE-NOTES.md). The instructions below describe only
+> the preserved legacy runtime; they are not activation prerequisites for notes.
+
 # Location consumer
 
 This is a deterministic, bounded consumer, with no LLM. Production is inactive.

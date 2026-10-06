@@ -1,10 +1,16 @@
-import json,os,tempfile,time,unittest,signal,sys
+import errno,json,os,tempfile,time,unittest,signal,sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from runner import Engine,cycle,target_key,Budget,run_process
 from scheduled_cycle import run
 from test_runner import P,R,NOW,fix
 K=target_key(R['target']);S={K:'open'}
+def process_dead(stat):
+ try:return stat.read_text().split()[2]=='Z'
+ except OSError as error:
+  if error.errno in (errno.ENOENT, errno.ESRCH):return True
+  raise
+
 class ReviewTests(unittest.TestCase):
  def setUp(self):self.tmp=tempfile.TemporaryDirectory();self.path=Path(self.tmp.name)/'state';self.e=Engine(self.path)
  def tearDown(self):self.e.close();self.tmp.cleanup()
@@ -73,11 +79,17 @@ class ReviewTests(unittest.TestCase):
  def test_timeout_kills_descendant(self):
   pidfile=Path(self.tmp.name)/'pid';script=Path(self.tmp.name)/'child.py'
   script.write_text('import subprocess,time\np=subprocess.Popen(["sleep","30"])\nopen('+repr(str(pidfile))+',"w").write(str(p.pid))\ntime.sleep(30)\n')
-  with self.assertRaises(Exception):run_process(['python3',str(script)],timeout=.3)
+  from concurrent.futures import ThreadPoolExecutor
+  with ThreadPoolExecutor(1) as pool:
+   result=pool.submit(run_process,['python3',str(script)],timeout=2)
+   deadline=time.monotonic()+1.5
+   while not pidfile.exists() and time.monotonic()<deadline:time.sleep(.01)
+   self.assertTrue(pidfile.exists(), 'child readiness not established within bound')
+   with self.assertRaises(Exception):result.result(timeout=4)
   pid=int(pidfile.read_text());stat=Path('/proc')/str(pid)/'stat'
   deadline=time.monotonic()+1
-  while stat.exists() and stat.read_text().split()[2]!='Z' and time.monotonic()<deadline:time.sleep(.01)
-  self.assertTrue(not stat.exists() or stat.read_text().split()[2]=='Z')
+  while not process_dead(stat) and time.monotonic()<deadline:time.sleep(.01)
+  self.assertTrue(process_dead(stat))
  def test_wrapper_cli_timeout_cancels_runner_and_sender_descendants(self):
   import subprocess
   now=time.time();r={**R,'mode':'nearby','expires':'2099-01-01'}
@@ -85,10 +97,17 @@ class ReviewTests(unittest.TestCase):
   pidfile=Path(self.tmp.name)/'descendant';sender=Path(self.tmp.name)/'slow-sender'
   sender.write_text('#!/usr/bin/env python3\nimport subprocess,time\np=subprocess.Popen(["sleep","90"])\nopen('+repr(str(pidfile))+',"w").write(str(p.pid))\ntime.sleep(90)\n');sender.chmod(0o700)
   cfg=Path(self.tmp.name)/'config';cfg.write_text(json.dumps({'enabled':True,'deliver':True,'state':str(self.path),'sender':str(sender),'offline_fixture':str(fixture),'budget_seconds':23}))
-  result=subprocess.run([sys.executable,str(Path(__file__).with_name('scheduled_cycle.py')),'--config',str(cfg)],capture_output=True,text=True,timeout=28)
-  self.assertIn(result.returncode,[0,1]);self.assertTrue(pidfile.exists())
+  proc=subprocess.Popen([sys.executable,str(Path(__file__).with_name('scheduled_cycle.py')),'--config',str(cfg)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+  try:
+   deadline=time.monotonic()+8
+   while not pidfile.exists() and proc.poll() is None and time.monotonic()<deadline:time.sleep(.02)
+   self.assertTrue(pidfile.exists(), 'sender descendant readiness not established')
+   proc.communicate(timeout=28)
+   self.assertIn(proc.returncode,[0,1])
+  finally:
+   if proc.poll() is None:proc.terminate();proc.communicate(timeout=5)
   stat=Path('/proc')/pidfile.read_text()/'stat'
-  self.assertTrue(not stat.exists() or stat.read_text().split()[2]=='Z')
+  self.assertTrue(process_dead(stat))
   self.assertEqual(self.e.db.execute('SELECT attempts,status FROM deliveries').fetchone(),(1,'pending'))
  def test_wrapper_external_stop_preserves_claim_and_kills_descendants(self):
   import subprocess
@@ -102,7 +121,7 @@ class ReviewTests(unittest.TestCase):
    deadline=time.monotonic()+5
    while not pidfile.exists() and time.monotonic()<deadline:time.sleep(.02)
    self.assertTrue(pidfile.exists());proc.terminate();proc.communicate(timeout=5)
-   stat=Path('/proc')/pidfile.read_text()/'stat';self.assertTrue(not stat.exists() or stat.read_text().split()[2]=='Z')
+   stat=Path('/proc')/pidfile.read_text()/'stat';self.assertTrue(process_dead(stat))
    self.assertEqual(self.e.db.execute('SELECT attempts,status FROM deliveries').fetchone(),(1,'claimed'))
   finally:
    if proc.poll() is None:proc.kill();proc.wait()

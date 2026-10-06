@@ -1,0 +1,1 @@
+{"name":"location-google-notes","schedule":"*/5 * * * *","script":"location-google-notes.sh","no_agent":true,"deliver":"local","failure_deliver":"local","enabled":false}

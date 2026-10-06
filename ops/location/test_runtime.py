@@ -83,8 +83,8 @@ def extract_release(test, source, destination):
     archive = source.with_name(source.name + '.tar')
     archive.chmod(0o644)
     destination.mkdir(mode=0o700)
-    expected = {'ops', 'ops/location', 'ops/familia', 'config.json', 'ops/familia/family_mission.py'}
-    expected.update('ops/location/'+name for name in ('runner.py','state_crypto.py','requirements.txt','scheduled_cycle.py','private_sender.py','api_child.py','fixture_child.py','config.json','cron-entry.sh','cron-job.json','README.md','ACTIVATION.md'))
+    expected = {'ops', 'ops/location', 'ops/familia', 'config.json', 'ops/familia/family_mission.py', 'notes-config.json'}
+    expected.update('ops/location/'+name for name in ('runner.py','state_crypto.py','requirements.txt','scheduled_cycle.py','private_sender.py','api_child.py','fixture_child.py','config.json','cron-entry.sh','cron-job.json','README.md','ACTIVATION.md','google_notes.py','notes_state.py','notes_runner.py','author_notes.py','notes-config.json','notes-cron-entry.sh','notes-cron-job.json','RELEASE-NOTES.md'))
     test.assertEqual({str(p.relative_to(source)) for p in source.rglob('*')}, expected)
     with tarfile.open(archive) as tar:
         test.assertEqual({m.name for m in tar.getmembers()}, expected)
@@ -93,7 +93,7 @@ def extract_release(test, source, destination):
             test.assertNotIn('..', Path(member.name).parts)
             test.assertTrue(member.isfile() or member.isdir())
             test.assertFalse(member.name.endswith(('.key','.sqlite','-wal','-shm','.lock')))
-            mode = 0o700 if member.isdir() or member.name.endswith('/cron-entry.sh') else 0o600 if member.name == 'config.json' else 0o644
+            mode = 0o700 if member.isdir() or member.name.endswith(('/cron-entry.sh', '/notes-cron-entry.sh')) else 0o600 if member.name in ('config.json', 'notes-config.json') else 0o644
             test.assertEqual(member.mode, mode)
             test.assertEqual((member.uid, member.gid, member.mtime), (0, 0, 0))
         tar.extractall(destination, filter='data')

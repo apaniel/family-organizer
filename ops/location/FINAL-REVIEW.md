@@ -1,0 +1,37 @@
+# Independent final review — 2026-10-06
+
+**CODE: GO for parent PR review and merge. No remaining code blocker found in the reviewed notes flow or local installer. ACTIVATION: NO-GO until parent installation, canonical author/readback, cron/enablement and real phone/recipient acceptance are completed.** Test exit zero alone is not this decision.
+
+The reviewed scope is the current uncommitted `ops/location` notes implementation, sender correction, release packaging, local exact-main installer, documentation and tests. This review changed only `test_install.py`, `test_review.py` and this report. Production code was read-only. No commit, push, real installation, client/service call, health read, task mutation, send, deployment, cron/config/core/profile change occurred.
+
+## Findings
+
+- The four earlier code blockers are corrected. Current observations remain limited to 300 seconds; explicit outside evidence expires after 900 seconds at evaluation and ambiguous/repeated observations cannot renew it. First inside with nearby:false remains silent, and rule edits clear the baseline. The clock is read after latest() returns; genuine future timestamps still fail. Tests cover cadence jitter, the 900-second boundary, ambiguity and future timestamps.
+- Authoring rejects both reserved marker prefixes in every rule text field, parses and compares the complete generated notes before update and after canonical readback, patches only notes and verifies exact task/list/source identity. Unrelated notes and trailing metadata are preserved. Real broker metadata merge and deleted-resource behavior are still acceptance checks, not established by mocks.
+- Notices identify the task through a bounded title snapshot and exact canonical list/task IDs. The first durable claim retains its message in the same owned 0600 JSON under a 0700 directory. Restart, title edit and template change reuse the original body; the HTTP regression checks original bytes and route payload hash with one mocked send. This authorized minimal delivery obligation is acceptable sensitive local state, not GPS history. There is no new D1 or SQLite database; the existing bridge receipt journal remains unchanged. Legacy claimed messages retain their original generic body.
+- The supported local installer requires branch main, exact HEAD equal to the supplied reviewed commit and a clean checkout, including untracked files. It never fetches or merges. Packaging uses an explicit source allowlist, excludes fixtures/state, preserves old source releases, switches current atomically, installs the shell entry and initializes only absent disabled state. Existing config/state is preserved. Path checks reject symlink ancestors, require private owned destination directories and regular owned single-link 0600 config; the JSON state layer adds no-follow traversal, locking and atomic fsync saves. This is a trusted service-user local installer, not a sandbox for concurrent hostile mutation of that user's directories. No unresolved blocker found within that supported scope.
+- Local VPS installation after reviewed PR merge to exact clean main is permitted. The earlier Actions-to-host requirement is superseded by the current developer authorization. Cloudflare app deployment remains main CI; this review introduces no VPS app deployment or bridge reinstall requirement.
+
+## Authorized harness repairs
+
+`test_install.py` locally patches `sys.dont_write_bytecode` and child-process `PYTHONDONTWRITEBYTECODE`. Its copied disposable repository excludes pre-existing __pycache__, and repeated install/upgrade/rollback still run the unchanged production clean-main guard. No gitignore or parent cleanup hides contamination. The test's explicit dirty-checkout refusal remains.
+
+`test_review.py` uses one process-death helper for descendant assertions and polling. It treats only ENOENT/ESRCH during /proc stat read as disappearance, or a zombie state as dead. A live state returns false; other errors propagate. Readiness bounds, timeout checks and `(1, pending)` / `(1, claimed)` assertions remain intact.
+
+## Installed-source contracts and live limits
+
+The actual installed `/home/hermes/.hermes/plugins/whatsapp-platform/bridge-build/private_delivery.js` matches the fixture and source snapshot byte-for-byte, SHA-256 `395e5d67fc2ce5bd7c05af15bade2b725c643257e706f2fb782ff349efe755ce`. Installed bridge.js registers that handler with the existing journal, bot-mode/connection gates and queued socket send, and reconciles recipient updates. No credential/environment values or journal contents were read.
+
+The handler returns exact HTTP 503 `{"state":"unavailable"}` before reservation when journal/bot/connection prerequisites fail. Reservation is durable before send; retries reconcile the same message ID and payload hash. HTTP 200 acknowledged requires recipient receipt evidence; 202 uncertain and 409 unresolved cannot confirm delivery. The sender recognizes the exact 503 before requiring messageId, requires a stable nonempty messageId for acknowledgement, and retains uncertainty after earlier reservation evidence. The runner also preserves a durable unknown across a later unavailable response. Offline fixture ACK proves these contracts, not recipient delivery or live service availability.
+
+`/opt/hermes-tasks/client.py` and `/opt/hermes-health/client.py` exist and match their checked-in snapshots (SHA-256 `8707f08362f475b284a0c3f069c33366339d66784ea88d2357b5bb7ce76e96cd` and `77ed03eded527ac1ca86d47721e80bf1f0580949004e89306e68ac592dc19eeb`). The Tasks CLI is a generic JSON pass-through to /v1 over `/run/hermes-tasks/api.sock`; the broker server file and socket exist, but server source is not readable by this reviewer. No broker invocation was made. Socket/source existence does not prove availability, conditional update behavior or canonical deletion handling. Parent must check those live before activation. No canonical Google task URL contract was invented.
+
+## Independent verification
+
+- `PYTHONDONTWRITEBYTECODE=1 /home/hermes/.hermes/hermes-agent/venv/bin/python -m unittest discover -s ops/location -v`: **74 tests passed in 54.177 seconds**, no failures or skips reported. Log: `/tmp/location-final-review-tests.log`.
+- Focused installer: **1 passed in 0.593 seconds**, with PYTHONDONTWRITEBYTECODE removed from the launching environment and `sys.dont_write_bytecode=False` before executing the test. The bootstrap suppressed only parent harness imports; the test itself supplies bytecode protection for its in-process fixture imports and subprocesses. This verifies self-containment without generating parent caches or weakening clean-main validation.
+- Direct helper probes verified ENOENT/ESRCH as gone, live state as alive, zombie as dead and EACCES propagation.
+- Shell syntax and `git diff --check` passed. No broad app build or external service checks were run.
+- `NOTES-REVIEW.md` remains byte-identical: SHA-256 `4bede7a3a645b10f695ac013db3c7b9a2234e6a7831f41d44c390aeae9173615`.
+
+Parent can now open/review the PR and merge main, then use the supported exact-main installer. Parent owns protected author/readback, service availability checks, cron reconciliation/enablement and real phone outside→inside plus recipient receipt acceptance. Installation must preserve existing private state and the bridge's existing identity/journal. Sparse phone samples or a visit wholly between polls can still miss an arrival; no live activation success is claimed.

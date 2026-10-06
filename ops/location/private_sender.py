@@ -4,7 +4,11 @@ import http.client
 import json
 import sys
 import time
-from runner import PRIVATE_DESTINATION
+PRIVATE_DESTINATION = '238615548420255@lid'
+
+
+class Unavailable(Exception):
+    """Bridge explicitly rejected before journal reservation/socket send."""
 
 
 def send(body, connect=None, clock=time.monotonic, sleep=time.sleep):
@@ -23,6 +27,10 @@ def send(body, connect=None, clock=time.monotonic, sleep=time.sleep):
             connection.request('POST', '/family/private-notice', json.dumps(body), {'Content-Type': 'application/json'})
             response = connection.getresponse()
             result = json.loads(response.read(4096))
+            if response.status == 503 and result == {'state': 'unavailable'}:
+                if expected_id:
+                    raise TimeoutError('Earlier reservation remains uncertain')
+                raise Unavailable('Bridge unavailable before reservation')
             identifier = result.get('messageId')
             if not isinstance(identifier, str) or not identifier or (expected_id and expected_id != identifier):
                 raise ValueError('Receipt mismatch')
@@ -40,6 +48,9 @@ def send(body, connect=None, clock=time.monotonic, sleep=time.sleep):
 if __name__ == '__main__':
     try:
         send(json.loads(sys.stdin.read(16384)))
+    except Unavailable:
+        print('Private bridge unavailable before reservation.', file=sys.stderr)
+        sys.exit(75)
     except Exception:
         print('Private delivery unresolved; no acknowledgement confirmed.', file=sys.stderr)
         sys.exit(1)

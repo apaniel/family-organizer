@@ -15,7 +15,9 @@ def prepare(destination):
     runtime.mkdir(parents=True)
     files = ('runner.py', 'state_crypto.py', 'requirements.txt', 'scheduled_cycle.py',
              'private_sender.py', 'api_child.py', 'fixture_child.py', 'config.json',
-             'cron-entry.sh', 'cron-job.json', 'README.md', 'ACTIVATION.md')
+             'cron-entry.sh', 'cron-job.json', 'README.md', 'ACTIVATION.md',
+             'google_notes.py', 'notes_state.py', 'notes_runner.py', 'author_notes.py',
+             'notes-config.json', 'notes-cron-entry.sh', 'notes-cron-job.json', 'RELEASE-NOTES.md')
     for name in files:
         shutil.copy2(root / 'ops/location' / name, runtime / name)
     (destination / 'ops/familia').mkdir()
@@ -24,10 +26,12 @@ def prepare(destination):
     config['sender'] = '/home/hermes/.hermes/local-customizations/location-runtime/current/ops/location/private_sender.py'
     (destination / 'config.json').write_text(json.dumps(config, indent=2)+'\n')
     (destination / 'config.json').chmod(0o600)
+    shutil.copy2(runtime / 'notes-config.json', destination / 'notes-config.json')
+    (destination / 'notes-config.json').chmod(0o600)
     # Explicit modes and metadata make the source-only archive reproducible.
     for item in destination.rglob('*'):
-        item.chmod(0o700 if item.is_dir() or item.name == 'cron-entry.sh' else
-                   0o600 if item == destination / 'config.json' else 0o644)
+        item.chmod(0o700 if item.is_dir() or item.name in ('cron-entry.sh', 'notes-cron-entry.sh') else
+                   0o600 if item in (destination / 'config.json', destination / 'notes-config.json') else 0o644)
     archive = destination.with_name(destination.name + '.tar')
     with archive.open('xb') as output, tarfile.open(fileobj=output, mode='w') as tar:
         for item in sorted(destination.rglob('*')):

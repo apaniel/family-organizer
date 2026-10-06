@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "interval_seconds": 300,
+  "state": "/home/hermes/.hermes/state/location-notes/state.json",
+  "sender": "/home/hermes/.hermes/local-customizations/location-runtime/current/ops/location/private_sender.py"
+}

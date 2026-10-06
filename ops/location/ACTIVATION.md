@@ -1,3 +1,8 @@
+> **Current notes flow:** the D1 association/delegation approach is superseded.
+> For the new Google Tasks notes runner, disabled release and installation gate,
+> use [RELEASE-NOTES.md](RELEASE-NOTES.md). The instructions below describe only
+> the preserved legacy runtime; they are not activation prerequisites for notes.
+
 # Reviewed activation procedure — do not execute during implementation
 
 The repository defaults remain `enabled:false`, `deliver:false`. New household
@@ -23,12 +28,12 @@ packages reviewed source using its established `INSTALL.md` layout.
 2. Resolve the Worker route permission failure recorded in `LOCAL-RUNTIME-REPORT.md`,
    then rerun the existing Deploy Action. A Worker upload alone is not deployment
    completion. No local Cloudflare deploy or copied token is permitted.
-3. Establish and review an Actions-to-this-host installation path. Neither repo
-   currently defines one; build artifacts are not deployments. Do not substitute
-   a local manual install, invented SSH secret, arbitrary runner label, root or sudo.
-   The plugin's existing `INSTALL.md` is the approved service-user install procedure
-   to be used by that path once established. Preserve its bot session argument.
-4. The reviewed host release must install the plugin **and** `private_delivery.js`
+3. Local VPS location scripts need no Actions-to-host path. After parent PR review
+   and merge to main, install from exact reviewed main through the supported local
+   layout; see RELEASE-NOTES.md and install-main.py for the notes release. App/UI
+   Cloudflare deployment remains main CI only. No installation is authorized by
+   this document alone during implementation.
+4. If the bridge changes, the reviewed host release must install the plugin **and** `private_delivery.js`
    through `bridge-source/build.sh` against the host's actual Hermes version. Never
    patch Hermes core. Install dependencies from the existing bridge lockfile.
    Keep rollback source outside plugin discovery. Start only the default bot

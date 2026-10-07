@@ -46,6 +46,13 @@ def mock(self,method,url,body=None,headers={},**kwargs):
   elif action=='location_latest':
    assert p['person']=='dan'
    result=fixture['fix']
+  elif action=='location':
+   assert p['person']=='dan' and p['order']=='asc' and p['limit']=='200' and p['tz']=='Europe/Madrid'
+   from datetime import datetime
+   start=datetime.fromisoformat(p['from']).timestamp();end=datetime.fromisoformat(p['to']).timestamp()
+   rows=fixture.get('locations',[fixture['fix']['location']])
+   rows=[r for r in rows if start<=r['ts']<=end]
+   result={'ok':True,'person':'dan','tz':'Europe/Madrid','count':len(rows),'locations':rows}
   else:raise AssertionError('No real write supported in checker test')
   self._mock=Response(result);return
  assert self.host=='127.0.0.1' and self.port==3000
@@ -113,6 +120,8 @@ class CliTests(unittest.TestCase):
                     fixture.write_text(json.dumps({'tasks':[current_task] if tasks is None else tasks,
                       'fix':{'ok':True,'person':'dan','location':{'lat':RULE['latitude']+(.004 if outside else 0),
                          'lon':RULE['longitude'],'h_acc':10,'ts':at,'received_at':at}}}))
+                write(True)
+                self.assertEqual(cli(env=env).returncode, 0)  # Arm before movement evidence.
                 write(True)
                 entry = directory/'entry.sh'
                 entry.write_text((ROOT/'notes-cron-entry.sh').read_text().replace(

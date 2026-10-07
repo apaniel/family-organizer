@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Google notes -> read-only latest fix -> approved private receipt adapter."""
+"""Google notes -> read-only location evidence -> approved receipt adapter."""
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
+from itertools import groupby
 import json
 import math
 from pathlib import Path
@@ -152,6 +153,96 @@ def continuing_presence(fix, rule, now, evidence):
         return 'uncertain'
 
 
+def arrival_rows(value, start, end):
+    """Validate completeness before using any event; retain rows in memory only."""
+    try:
+        if (not isinstance(value, dict) or value.get('ok') is not True
+                or value.get('person') != 'dan' or value.get('tz') != 'Europe/Madrid'
+                or value.get('truncated', False) is not False
+                or value.get('has_more', False) is not False):
+            return None
+        rows = value['locations']
+        if (not isinstance(rows, list) or not rows or type(value.get('count')) is not int
+                or value['count'] != len(rows) or len(rows) >= HISTORY_LIMIT):
+            return None
+        checked = []
+        event_ids = {}
+        for row in rows:
+            ts, received = stamp(row['ts']), stamp(row['received_at'])
+            coords = [row[k] for k in ('lat', 'lon', 'h_acc')]
+            if (not all(math.isfinite(v) for v in (ts, received))
+                    or not 0 <= start <= ts <= received <= end
+                    or any(type(v) not in (int, float) or not math.isfinite(v) for v in coords)
+                    or not -90 <= coords[0] <= 90 or not -180 <= coords[1] <= 180 or coords[2] < 0):
+                return None
+            event_id = row.get('id')
+            if event_id is not None:
+                if not isinstance(event_id, str) or not event_id:
+                    return None
+                if event_id in event_ids:
+                    if event_ids[event_id] != row:
+                        return None
+                    continue
+                event_ids[event_id] = row
+            checked.append((ts, row))
+        return sorted(checked, key=lambda pair: pair[0])
+    except (KeyError, TypeError, ValueError, OverflowError, AttributeError):
+        return None
+
+
+def arrival_history(item, rule, rows, now):
+    """Replay observation-time transitions, never treating backlog as current presence.
+
+    Overlap the whole bounded anchor window to recover late received events and
+    same-second samples. Claims consume the episode before any subsequent read.
+    """
+    floor = max(now-STATIONARY_LOOKBACK, item['history_after'])
+    outside = item.get('outside_at', 0)
+    outside = outside if max(0, now-STATIONARY_LOOKBACK) <= outside <= now else 0
+    arrived = False
+    newest = item['lastfix']
+    phase = item['phase']
+    last_observed = 0
+    for ts, group in groupby(rows, key=lambda pair: pair[0]):
+        if ts < floor:
+            continue
+        classifications = set()
+        for _, loc in group:
+            if loc['h_acc'] > 100:
+                continue
+            # Preserve the existing phone-sample policy; visits are excluded.
+            if loc.get('kind', 'location') not in ('location', 'significant', 'trip', 'fence'):
+                continue
+            d = distance(loc, rule)
+            observed = ('inside' if d+loc['h_acc'] <= rule['radius'] else
+                        'outside' if d-loc['h_acc'] >= rule['radius']+max(50, rule['radius']*.25) else None)
+            if observed:
+                classifications.add(observed)
+        # Contradictory precise evidence has no chronological ordering. Neither
+        # side may claim arrival or change phase/baseline; uncertainty retains
+        # the real anchor. Coarse/ambiguous rows cannot mask precise evidence.
+        if len(classifications) != 1:
+            continue
+        observed = classifications.pop()
+        if observed:
+            last_observed = ts
+        if observed == 'outside':
+            outside = ts
+        elif observed == 'inside':
+            if (outside and 0 < ts-outside <= OUTSIDE_MAX_AGE) or trigger(rule)['nearby']:
+                arrived = True
+            outside = 0
+        # Update phase only from an unambiguous timestamp classification.
+        if ts >= newest and observed:
+            newest, phase = ts, observed
+    if last_observed < item['lastfix']:
+        outside = item.get('outside_at', 0)
+    item.update(lastfix=max(item['lastfix'], newest), phase=phase,
+                outside_at=outside, history_checked=now)
+    if arrived:
+        item.update(delivery='retry', episode=1)
+
+
 def identity(task):
     if not isinstance(task, dict) or task.get('owner') != 'Dani' or any(not isinstance(task.get(k), str) or not task[k] for k in ('listId', 'id')):
         raise ValueError('Canonical Dani identity required')
@@ -179,7 +270,7 @@ def delivery_body(item):
     return {'destination': DESTINATION, 'message': item.get('message', MESSAGE), 'idempotency_key': 'google-location:v1:' + key}
 
 
-def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evidence=None, fail_unresolved=False):
+def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evidence=None, fail_unresolved=False, history=None):
     candidates = {}
     for task in tasks:
         if task.get('owner') != 'Dani':
@@ -225,11 +316,31 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
                 and item['fingerprint'] != fingerprint(rule)):
             item.update(delivery='idle', fingerprint=fingerprint(rule),
                         phase=None, lastfix=0, outside_at=0)
+            item.pop('history_after', None)
+            item.pop('history_checked', None)
     state.save()
-    needs_fix = any(state.data['items'].get(k, {}).get('delivery', 'idle') == 'idle' for k in due_rules)
+    needs_fix = any(state.data['items'].get(k, {}).get('delivery', 'idle') == 'idle'
+                    and (history is None or trigger(r)['type'] == 'presence_at')
+                    for k, r in due_rules.items())
     fix = latest() if needs_fix else None
     now = clock() if supplied_now is None else supplied_now
     valid = valid_fix(fix, now)
+    # Share one bounded read, starting at the earliest eligible authorization or
+    # real legacy outside anchor. A lastfix cursor would lose late uploads.
+    history_starts = []
+    if history:
+        for key, rule in due_rules.items():
+            item = state.data['items'].get(key, {})
+            if item.get('delivery', 'idle') != 'idle' or trigger(rule)['type'] != 'arrival':
+                continue
+            start = now
+            if item.get('fingerprint') == fingerprint(rule):
+                anchor = item.get('outside_at', 0)
+                start = item.get('history_after', anchor if anchor and 0 <= now-anchor <= STATIONARY_LOOKBACK else now)
+            history_starts.append(max(0, now-STATIONARY_LOOKBACK, start))
+    history_start = min(history_starts, default=now)
+    history_cache = None
+    history_read = False
     sent = 0
     for key in list(due_rules) + list(invalid):
         rule = rules.get(key)
@@ -243,6 +354,8 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
                 item['delivery'] = 'stopped' if item['delivery'] == 'retry' else item['delivery']
                 continue
             item.update(fingerprint=fp, phase=None, lastfix=0, outside_at=0)
+            item.pop('history_after', None)
+            item.pop('history_checked', None)
         if item is None:
             item = {'listId': task['listId'], 'id': task['id'], 'fingerprint': fp,
                     'phase': None, 'lastfix': 0, 'outside_at': 0, 'delivery': 'idle', 'attempts': 0, 'episode': 0}
@@ -261,7 +374,21 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
             title = ' '.join(str(task.get('title', 'Sin título')).split())[:200]
             text = {'inside': 'La ubicación reciente confirma presencia en el lugar.', 'inferred_inside': 'Según el último registro y el contacto reciente del dispositivo, parece que sigues en el lugar.', 'outside': 'La ubicación indica que estás fuera; no se cumple la condición.', 'stale': 'No pude confirmar presencia: registro antiguo o dispositivo sin contacto reciente.', 'uncertain': 'No pude confirmar presencia con suficiente fiabilidad.'}[outcome]
             item.update(delivery='retry', episode=1, evaluated_at=now, outcome=outcome, due_at=due_stamp(trigger(rule)['dueAt']), message=f'{text} Lugar: {rule["name"]}. Tarea: {title}. Evaluada a las {datetime.fromtimestamp(now).astimezone().isoformat()}.', notice_version=1)
-        if item['delivery'] == 'idle' and valid:
+        use_history = False
+        if history and item['delivery'] == 'idle' and trigger(rule)['type'] == 'arrival':
+            # Upgrade only a real, unconsumed outside anchor under the same rule.
+            if 'history_after' not in item:
+                anchor = item.get('outside_at', 0)
+                item['history_after'] = anchor if anchor and 0 <= now-anchor <= STATIONARY_LOOKBACK else now
+            use_history = True
+            if not history_read:
+                history_read = True
+                history_cache = arrival_rows(history(history_start, now), history_start, now)
+            if supplied_now is None:
+                now = clock()
+            if history_cache is not None:
+                arrival_history(item, rule, history_cache, now)
+        if item['delivery'] == 'idle' and valid and not use_history:
             loc = fix['location']
             ts = stamp(loc['ts'])
             if ts <= item['lastfix']:
@@ -372,6 +499,18 @@ class Runtime:
             raise RuntimeError('Location broker unavailable')
         return result
 
+    def history(self, start, end):
+        code, output = self.call([sys.executable, self.config.get('location_client', LOCATION),
+            'locations', 'dan', '--from', datetime.fromtimestamp(start, timezone.utc).isoformat(),
+            '--to', datetime.fromtimestamp(end, timezone.utc).isoformat(),
+            '--tz', 'Europe/Madrid', '--limit', str(HISTORY_LIMIT), '--order', 'asc'])
+        if code:
+            raise RuntimeError('Location broker unavailable')
+        try:
+            return json.loads(output)
+        except ValueError as exc:
+            raise RuntimeError('Location broker invalid response') from exc
+
     def evidence(self, start, end):
         def read(args):
             code, output = self.call([sys.executable, self.config.get('location_client', LOCATION), *args])
@@ -420,7 +559,7 @@ def run(config, initialize=False, clock=time.time):
     with State(config['state']) as state:
         tasks = runtime.tasks('list', {'owner': 'Dani', 'includeDone': False})['tasks']
         return cycle(state, tasks, runtime.latest,
-                     lambda task_id: runtime.tasks('get', {'id': task_id})['task'], runtime.send, clock=clock, evidence=runtime.evidence, fail_unresolved=True)
+                     lambda task_id: runtime.tasks('get', {'id': task_id})['task'], runtime.send, clock=clock, evidence=runtime.evidence, fail_unresolved=True, history=runtime.history)
 
 
 if __name__ == '__main__':

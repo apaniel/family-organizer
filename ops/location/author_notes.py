@@ -6,7 +6,7 @@ from google_notes import update_notes, validate, parse
 from notes_runner import Runtime, identity, active
 
 
-def author(runtime, task_id, list_id, rule, source_key):
+def author(runtime, task_id, list_id, rule, source_key, state_path=None, replace_trailing_private_narrative=None):
     old = runtime.tasks('get', {'id': task_id})['task']
     identity(old)
     if old['listId'] != list_id or old['id'] != task_id or not active(old) or old.get('sourceKey') != source_key:
@@ -17,7 +17,34 @@ def author(runtime, task_id, list_id, rule, source_key):
         import time
         if due_stamp(rule['trigger']['dueAt']) <= time.time():
             raise ValueError('Expired dueAt cannot arm a new obligation')
-    notes = update_notes(old['notes'], rule)
+    previous = parse(old['notes'])
+    delivery_changed = (previous or {}).get('delivery') != rule.get('delivery')
+    if delivery_changed:
+        from notes_state import State
+        with State(state_path or '/home/hermes/.hermes/state/location-notes/state.json', readonly=True) as state:
+            if state.data['items'].get(identity(old), {}).get('episode', 0) != 0:
+                raise ValueError('Delivery change rejected: task already claimed or consumed')
+            return _write(runtime, old, rule, source_key, replace_trailing_private_narrative)
+    return _write(runtime, old, rule, source_key, replace_trailing_private_narrative)
+
+
+def _write(runtime, old, rule, source_key, narrative):
+    task_id, list_id = old['id'], old['listId']
+    original = old['notes']
+    if narrative is not None:
+        # Parent supplies exact erroneous trailing paragraph from canonical readback.
+        # Only this suffix outside the rule is replaced; root metadata is retained.
+        if not narrative or any(marker in narrative for marker in ('[hermes-location:', '[/hermes-location:', '#hermes')):
+            raise ValueError('Exact trailing narrative required')
+        lines = original.splitlines(keepends=True)
+        metadata = lines.pop() if lines and lines[-1].startswith('#hermes ') else ''
+        body = ''.join(lines)
+        trimmed = body.rstrip('\n')
+        if not trimmed.endswith('\n' + narrative) or trimmed.count(narrative) != 1:
+            raise ValueError('Trailing narrative does not match')
+        replacement = 'Entrega explícita: ' + rule['delivery']['message'] + ' a ' + rule['delivery']['destination'] + '.'
+        original = trimmed[:-len(narrative)] + replacement + body[len(trimmed):] + metadata
+    notes = update_notes(original, rule)
     if parse(notes) != rule:
         raise ValueError('Generated rule mismatch')
     # Metadata is owned by broker: patch notes only, never recreate/move/complete.
@@ -80,6 +107,21 @@ if __name__ == '__main__':
         except Exception:
             m.exit(1, 'Migration stopped; no reset or real task write.\n')
         m.exit(0)
+    if '--claim-status' in sys.argv:
+        from notes_state import State
+        c = argparse.ArgumentParser(description='Read-only private claim status; no Tasks or delivery calls')
+        c.add_argument('--claim-status', action='store_true')
+        c.add_argument('--state', required=True)
+        c.add_argument('--id', required=True)
+        c.add_argument('--list-id', required=True)
+        a = c.parse_args()
+        try:
+            with State(a.state, readonly=True) as state:
+                item = state.data['items'].get(identity({'owner': 'Dani', 'id': a.id, 'listId': a.list_id}))
+                print('unclaimed' if item is None or item['episode'] == 0 else 'claimed:' + item['delivery'])
+        except Exception:
+            c.exit(1, 'Claim status unavailable; authoring must stop.\n')
+        c.exit(0)
     for field in ('id', 'list-id', 'source-key', 'name', 'address', 'maps-url'):
         p.add_argument('--'+field, required=True)
     for field in ('latitude', 'longitude', 'radius'):
@@ -88,7 +130,13 @@ if __name__ == '__main__':
     p.add_argument('--nearby', choices=('true', 'false'))
     p.add_argument('--trigger', choices=('arrival', 'presence_at'))
     p.add_argument('--due-at')
+    p.add_argument('--delivery-destination')
+    p.add_argument('--delivery-message')
+    p.add_argument('--state')
+    p.add_argument('--replace-trailing-private-narrative')
     a = p.parse_args()
+    if (a.delivery_destination is None) != (a.delivery_message is None):
+        p.error('Both explicit delivery fields required')
     if a.trigger != 'presence_at' and a.nearby is None:
         p.error('--nearby must be explicit for arrival')
     if a.trigger != 'presence_at' and a.due_at is not None:
@@ -101,7 +149,9 @@ if __name__ == '__main__':
         del rule['nearby']
         rule['trigger'] = ({'type': 'presence_at', 'dueAt': a.due_at} if a.trigger == 'presence_at'
                            else {'type': 'arrival', 'nearby': a.nearby == 'true'})
+    if a.delivery_destination is not None:
+        rule['delivery'] = {'destination': a.delivery_destination, 'message': a.delivery_message}
     try:
-        print(json.dumps(author(Runtime({}), a.id, a.list_id, rule, a.source_key)))
+        print(json.dumps(author(Runtime({}), a.id, a.list_id, rule, a.source_key, a.state, a.replace_trailing_private_narrative)))
     except Exception:
         p.exit(1, 'Notes authoring stopped; no verified change confirmed.\n')

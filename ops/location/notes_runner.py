@@ -164,6 +164,15 @@ def active(task):
 
 
 def delivery_body(item):
+    if 'dispatch' in item:
+        body = item['dispatch']['body']
+        # JSON ledger saves sort keys; restore stable wire field order on restart.
+        if item['dispatch']['transport'] == 'group':
+            p = body['component']
+            return {'key': body['key'], 'destination': body['destination'],
+                    'component': {'id': p['id'], 'kind': p['kind'], 'content': p['content']}}
+        return {'destination': body['destination'], 'message': body['message'],
+                'idempotency_key': body['idempotency_key']}
     key = hashlib.sha256(json.dumps(['Dani', item['listId'], item['id'], item['fingerprint'], item['episode']], separators=(',', ':')).encode()).hexdigest()
     if 'legacy_body' in item:
         return item['legacy_body']
@@ -204,6 +213,19 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
     if now is None and any(trigger(r)['type'] == 'presence_at' for r in rules.values()):
         now = clock()
     due_rules = {k: r for k, r in rules.items() if trigger(r)['type'] == 'arrival' or due_stamp(trigger(r)['dueAt']) <= now}
+    # A removed, never-claimed arrival may accept a new configuration. Claims
+    # remain terminal; old outside evidence must never trigger the new rule.
+    for key, rule in due_rules.items():
+        item = state.data['items'].get(key)
+        if (item and item['delivery'] == 'stopped'
+                and item['episode'] == 0 and item['attempts'] == 0
+                and not {'dispatch', 'legacy_body', 'message', 'notice_version',
+                         'invalid_rule', 'evaluated_at', 'due_at', 'outcome'} & item.keys()
+                and trigger(rule) == {'type': 'arrival', 'nearby': False}
+                and item['fingerprint'] != fingerprint(rule)):
+            item.update(delivery='idle', fingerprint=fingerprint(rule),
+                        phase=None, lastfix=0, outside_at=0)
+    state.save()
     needs_fix = any(state.data['items'].get(k, {}).get('delivery', 'idle') == 'idle' for k in due_rules)
     fix = latest() if needs_fix else None
     now = clock() if supplied_now is None else supplied_now
@@ -282,13 +304,17 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
                 continue
             item['attempts'] += 1
         # Atomic durable claim BEFORE transport. A killed process remains unknown.
-        if 'message' not in item and item['delivery'] == 'retry' and item['attempts'] == 1:
+        if 'message' not in item and item['delivery'] == 'retry' and item['attempts'] == 1 and not (rule and 'delivery' in rule):
             title = current.get('title', '')
             title = ' '.join(title.split())[:200] if isinstance(title, str) else ''
             item['notice_version'] = NOTICE_VERSION
             item['message'] = (f'Tarea pendiente: {title or "Sin título"}. '
                                f'Google Tasks — lista {item["listId"]}, tarea {item["id"]}. '
                                'Sigue pendiente hasta que la completes.')
+        if 'dispatch' not in item:
+            from delivery import snapshot, explicit_body
+            body = explicit_body(item, rule['delivery']) if rule and 'delivery' in rule and not was_unknown else delivery_body(item)
+            item['dispatch'] = snapshot(body)
         item['delivery'] = 'unknown'
         state.save()
         result = send(delivery_body(item))
@@ -362,7 +388,7 @@ class Runtime:
 
     def send(self, body):
         try:
-            code, _ = self.call([sys.executable, self.config['sender']], body, 25)
+            code, _ = self.call([sys.executable, str(Path(__file__).with_name('delivery.py')) if 'component' in body else self.config['sender']], body, 25)
         except (TimeoutError, subprocess.TimeoutExpired):
             return 'unknown'
         return 'acknowledged' if code == 0 else 'unavailable' if code == 75 else 'unknown'

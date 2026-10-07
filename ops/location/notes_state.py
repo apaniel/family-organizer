@@ -17,7 +17,7 @@ def validate(data):
     if not isinstance(data, dict) or set(data) != {'version', 'items'} or type(data['version']) is not int or data['version'] != 1 or not isinstance(data['items'], dict):
         raise ValueError('Invalid ledger')
     for key, item in data['items'].items():
-        if not isinstance(key, str) or not re.fullmatch('[0-9a-f]{64}', key) or not isinstance(item, dict) or not FIELDS <= set(item) or set(item) - FIELDS - {'outside_at', 'message', 'notice_version', 'evaluated_at', 'due_at', 'outcome', 'invalid_rule', 'legacy_body'}:
+        if not isinstance(key, str) or not re.fullmatch('[0-9a-f]{64}', key) or not isinstance(item, dict) or not FIELDS <= set(item) or set(item) - FIELDS - {'outside_at', 'message', 'notice_version', 'evaluated_at', 'due_at', 'outcome', 'invalid_rule', 'legacy_body', 'dispatch'}:
             raise ValueError('Invalid ledger item')
         if any(not isinstance(item[k], str) or not item[k] for k in ('listId', 'id', 'fingerprint')) or not re.fullmatch('[0-9a-f]{64}', item['fingerprint']):
             raise ValueError('Invalid ledger identity')
@@ -26,6 +26,11 @@ def validate(data):
             raise ValueError('Invalid canonical ledger identity')
         if item['phase'] not in (None, 'outside', 'inside') or item['delivery'] not in STATUSES:
             raise ValueError('Invalid ledger status')
+        if 'dispatch' in item:
+            from delivery import validate_snapshot
+            validate_snapshot(item['dispatch'])
+            if item['episode'] != 1 or item['attempts'] < 1:
+                raise ValueError('Unclaimed dispatch')
         if 'message' in item or 'notice_version' in item:
             if (not isinstance(item.get('message'), str) or not 1 <= len(item['message']) <= 2000
                     or item.get('notice_version') != 1 or item['episode'] != 1):
@@ -64,7 +69,10 @@ class State:
     validator = staticmethod(validate)
     initial = {"version": 1, "items": {}}
 
-    def __init__(self, filename, initialize=False):
+    def __init__(self, filename, initialize=False, readonly=False):
+        self.readonly = readonly
+        if readonly and initialize:
+            raise ValueError("Read-only initialization forbidden")
         path = Path(filename)
         if not path.is_absolute() or path.name in ('', '.', '..') or '..' in path.parts:
             raise ValueError('Absolute private ledger required')
@@ -85,7 +93,7 @@ class State:
             info = os.fstat(fd)
             if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
                 raise ValueError('Ledger directory must be owned mode 0700')
-            self.lock = os.open(self.name + '.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=fd)
+            self.lock = os.open(self.name + '.lock', (os.O_RDONLY if readonly else os.O_RDWR | os.O_CREAT) | os.O_NOFOLLOW, 0o600, dir_fd=fd)
             self.check(self.lock)
             fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             if initialize:
@@ -114,6 +122,8 @@ class State:
             raise ValueError('Ledger file must be owned regular mode 0600')
 
     def save(self):
+        if self.readonly:
+            raise ValueError("Read-only ledger")
         self.validator(self.data)
         # Refuse an externally replaced unsafe target as well as unsafe input.
         old = os.open(self.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=self.directory)

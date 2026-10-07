@@ -13,6 +13,10 @@ FIELDS = {'version', 'revision', 'name', 'address', 'mapsUrl', 'latitude', 'long
 
 def validate(rule):
     expected = FIELDS if isinstance(rule, dict) and rule.get('version') == 1 else (FIELDS - {'nearby'}) | {'trigger'}
+    if isinstance(rule, dict) and 'delivery' in rule:
+        expected = expected | {'delivery'}
+        from delivery import validate_delivery
+        validate_delivery(rule['delivery'])
     if not isinstance(rule, dict) or set(rule) != expected:
         raise ValueError('Invalid location fields')
     if type(rule['version']) is not int or rule['version'] not in (1, 2) or type(rule['revision']) is not int or rule['revision'] < 1:
@@ -43,6 +47,8 @@ def validate(rule):
             due_stamp(trigger['dueAt'])
         else:
             raise ValueError('Invalid trigger')
+    if 'delivery' in rule and rule['version'] == 2 and rule['trigger']['type'] != 'arrival':
+        raise ValueError('Explicit delivery requires arrival')
     return rule
 
 

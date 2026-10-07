@@ -1,5 +1,9 @@
 # Google Tasks notes location notices — disabled release
 
+For the optional explicit Apalas arrival extension and revision-2 parent authoring,
+see [APALAS-IMPLEMENTATION.md](APALAS-IMPLEMENTATION.md). The original private
+contract and historical commands below describe the base release.
+
 The new notes flow supersedes the D1 association/delegation proposal. Existing
 user places, dashboard routes and the legacy runner remain untouched for backward
 compatibility; none is imported or called by this flow. There is no Calendar scope.

@@ -107,19 +107,40 @@ class GroupCliTests(unittest.TestCase):
                     return subprocess.run([sys.executable, str(ROOT/'notes_runner.py'), '--config', str(config), *extra], env=env, capture_output=True, text=True, timeout=10)
                 self.assertEqual(cli('--initialize-state').returncode, 0)
                 data = json.loads(config.read_text()); data['enabled'] = True; config.write_text(json.dumps(data))
+                # Synthetic geometry only, through the real broker CLI contract.
+                rule = {**RULE, 'latitude': 0, 'longitude': 0,
+                        'mapsUrl': 'https://www.google.com/maps', 'revision': 2,
+                        'delivery': {'destination': GROUP, 'message': 'Hola'}}
                 task = copy.deepcopy(TASK)
-                task['notes'] = update_notes(task['notes'], {**RULE, 'revision': 2, 'delivery': {'destination': GROUP, 'message': 'Hola'}})
+                task['notes'] = update_notes('', rule)
                 at = time.time()-1
-                def write(outside=False):
+                rows = []
+                def write(outside=False, hidden=False):
                     nonlocal at
                     at = max(at+.1, time.time()-.01)
-                    fixture.write_text(json.dumps({'tasks': [task], 'fix': {'ok': True, 'person': 'dan', 'location': {'lat': RULE['latitude'] + (.004 if outside else 0), 'lon': RULE['longitude'], 'h_acc': 10, 'ts': at, 'received_at': at}}}))
-                write(True); self.assertEqual(cli().returncode, 0)
-                write(); self.assertEqual(cli().returncode, 1)
+                    loc = {'lat': .004 if outside else 0, 'lon': 0,
+                           'h_acc': 19, 'ts': at, 'received_at': at, 'kind': 'location'}
+                    rows.append(loc)
+                    if hidden:
+                        # Latest is coarse; an intervening precise inside must win.
+                        rows.append({**loc, 'lat': .0012, 'h_acc': 26})
+                        loc = {**loc, 'ts': at+.001, 'received_at': at+.001, 'h_acc': 1414}
+                        rows.append(loc)
+                    fixture.write_text(json.dumps({'tasks': [task], 'locations': rows,
+                        'fix': {'ok': True, 'person': 'dan', 'location': loc}}))
+                write(True); self.assertEqual(cli().returncode, 0)  # Arm.
+                write(True); self.assertEqual(cli().returncode, 0)  # Post-arm outside.
+                write(hidden=True); self.assertEqual(cli().returncode, 1)
                 self.assertEqual(next(iter(json.loads(state.read_text())['items'].values()))['delivery'], 'unknown')
+                actions = [json.loads(line)['action'] for line in calls.read_text().splitlines()]
+                self.assertEqual(actions.count('location'), 3)
+                self.assertNotIn('location_latest', actions)
+                history_reads = actions.count('location')
                 acknowledged = True; task['title'] = 'Changed secret title'; write()
                 result = cli(); self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(next(iter(json.loads(state.read_text())['items'].values()))['delivery'], 'sent')
+                actions = [json.loads(line)['action'] for line in calls.read_text().splitlines()]
+                self.assertEqual(actions.count('location'), history_reads)
                 self.assertEqual(len(reservations), 1)
                 self.assertEqual(requests[0], requests[1])
                 self.assertEqual(requests[0]['component']['content'], 'Hola')

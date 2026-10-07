@@ -214,7 +214,7 @@ class HistoryTests(unittest.TestCase):
         good = [row(T, True), row(T+240)]
         bad = [None, {}, response([]), response(good, truncated=True),
                response(good, has_more=True), {**response(good), 'count': 1},
-               {**response(good), 'count': True}, response(good*100),
+               {**response(good), 'count': True}, response(good*2500),
                {**response(good), 'person': 'wife'}, {**response(good), 'ok': False},
                {**response(good), 'tz': 'UTC'},
                response(good+[row(T+801)]), response(good+[{'ts': T+400}]),
@@ -232,6 +232,14 @@ class HistoryTests(unittest.TestCase):
                     self.tick([], result=value)
                 self.assertFalse(self.sent)
                 self.assertEqual(self.item()['delivery'], 'idle')
+
+    def test_complete_201_rows_recover_without_serializing_history(self):
+        rows = [row(T, True)] + [row(T+i) for i in range(1, 201)]
+        self.tick(rows)
+        self.assertEqual(len(self.sent), 1)
+        text = self.path.read_text()
+        for forbidden in ('lat', 'lon', 'h_acc', 'received_at', 'locations'):
+            self.assertNotIn(forbidden, text)
 
     def test_out_of_order_same_second_and_newer_exit_preserved(self):
         rows = [row(T+600, True), row(T+240, accuracy=1414),
@@ -367,10 +375,14 @@ class HistoryTests(unittest.TestCase):
         args = call.call_args.args[0]
         self.assertEqual(args[2:4], ['locations', 'dan'])
         self.assertEqual(args[args.index('--order')+1], 'asc')
-        self.assertEqual(args[args.index('--limit')+1], '200')
+        self.assertEqual(args[args.index('--limit')+1], '5000')
         self.assertEqual(args[args.index('--tz')+1], 'Europe/Madrid')
         self.assertEqual(datetime.fromisoformat(args[args.index('--from')+1]).timestamp(), T)
         self.assertEqual(datetime.fromisoformat(args[args.index('--to')+1]).timestamp(), T+800)
+        with patch.object(runtime, 'call', return_value=(0, '{"ok": true}')) as call:
+            runtime.evidence(T, T+800)
+        evidence_args = call.call_args.args[0]
+        self.assertEqual(evidence_args[evidence_args.index('--limit')+1], '200')
         with patch.object(runtime, 'call', return_value=(1, '')):
             with self.assertRaises(RuntimeError): runtime.history(T, T+800)
         with patch.object(runtime, 'call', return_value=(0, '{')):

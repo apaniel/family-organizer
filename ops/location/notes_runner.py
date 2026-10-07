@@ -23,6 +23,7 @@ MAX_AGE = 300
 OUTSIDE_MAX_AGE = 900
 NOTICE_VERSION = 1
 HISTORY_LIMIT = 200
+ARRIVAL_HISTORY_LIMIT = 5000
 STATIONARY_LOOKBACK = 7200
 
 
@@ -163,7 +164,7 @@ def arrival_rows(value, start, end):
             return None
         rows = value['locations']
         if (not isinstance(rows, list) or not rows or type(value.get('count')) is not int
-                or value['count'] != len(rows) or len(rows) >= HISTORY_LIMIT):
+                or value['count'] != len(rows) or len(rows) >= ARRIVAL_HISTORY_LIMIT):
             return None
         checked = []
         event_ids = {}
@@ -547,7 +548,7 @@ class Runtime:
         code, output = self.call([sys.executable, self.config.get('location_client', LOCATION),
             'locations', 'dan', '--from', datetime.fromtimestamp(start, timezone.utc).isoformat(),
             '--to', datetime.fromtimestamp(end, timezone.utc).isoformat(),
-            '--tz', 'Europe/Madrid', '--limit', str(HISTORY_LIMIT), '--order', 'asc'])
+            '--tz', 'Europe/Madrid', '--limit', str(ARRIVAL_HISTORY_LIMIT), '--order', 'asc'])
         if code:
             raise RuntimeError('Location broker unavailable')
         try:

@@ -47,7 +47,7 @@ def mock(self,method,url,body=None,headers={},**kwargs):
    assert p['person']=='dan'
    result=fixture['fix']
   elif action=='location':
-   assert p['person']=='dan' and p['order']=='asc' and p['limit']=='200' and p['tz']=='Europe/Madrid'
+   assert p['person']=='dan' and p['order']=='asc' and p['limit']=='5000' and p['tz']=='Europe/Madrid'
    from datetime import datetime
    start=datetime.fromisoformat(p['from']).timestamp();end=datetime.fromisoformat(p['to']).timestamp()
    rows=fixture.get('locations',[fixture['fix']['location']])

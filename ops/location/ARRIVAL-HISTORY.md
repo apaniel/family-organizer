@@ -10,9 +10,14 @@ not self-approval or deployment approval; independent review remains required.
 
 `where` hid precise inside observations behind newer ambiguous/coarse readings.
 The real runtime now shares one `locations dan --from <UTC ISO> --to <UTC ISO>
---tz Europe/Madrid --order asc --limit 200` read across idle arrival rules, within
+--tz Europe/Madrid --order asc --limit 5000` read across idle arrival rules, within
 the existing subprocess budget. Start is the earliest eligible baseline, capped
-at two hours. The optional `history` cycle dependency preserves legacy callers;
+at two hours. The initial two-hour scanner uses dedicated
+`ARRIVAL_HISTORY_LIMIT = 5000`; timed presence/evidence retains `HISTORY_LIMIT = 200`.
+Arrival responses must have matching integer count and row length, with no
+truncation or more-results flag; 5000 or more rows fail closed as saturated.
+Complete 201-row responses can recover arrival. There is no paging; raw history
+remains in memory and GPS rows are never serialized. The optional `history` cycle dependency preserves legacy callers;
 timed presence and snapshot freshness (300 seconds) retain their old behavior.
 
 Replay sorts by observation time and resolves classifications for each timestamp
@@ -192,3 +197,18 @@ are test evidence, not self-approval or deployment approval.
 
 Final in-memory compilation of runtime/tests and `git diff --check` PASS.
 Worktree status remains exactly the same three modified files.
+
+## Dedicated arrival cap validation
+
+History-cap worktree validation: TDD red had two expected failures (complete
+201-row recovery and default request limit); green history **31/31 PASS**.
+Focused actual CLI/group tests **4/4 PASS**. Approved-venv canonical suite
+**151/151 PASS** (68.680s), from 152 discovered, excluding only
+`test_runtime.RuntimeTests.test_actual_hermes_cron_no_agent_empty_dispatch`
+under the no-cron constraint. Disposable offline installer fixture included.
+Saturation fixture is now 5000 rows; evidence request still asserts 200.
+Logs: `/home/hermes/.hermes/cache/scratch/history-cap-{red,green,cli,canonical}.log`.
+All runs used approved venv, bytecode disabled and designated scratch, no `/tmp`.
+No live broker calls, production installation/state/task/send operations, commits
+or pushes. Parent review/merge/install and real-data recovery remain pending;
+this patch does not establish delivery of the original hello or self-approval.

@@ -84,7 +84,7 @@ def extract_release(test, source, destination):
     archive.chmod(0o644)
     destination.mkdir(mode=0o700)
     expected = {'ops', 'ops/location', 'ops/familia', 'config.json', 'ops/familia/family_mission.py', 'notes-config.json'}
-    expected.update('ops/location/'+name for name in ('runner.py','state_crypto.py','requirements.txt','scheduled_cycle.py','private_sender.py','api_child.py','fixture_child.py','config.json','cron-entry.sh','cron-job.json','README.md','ACTIVATION.md','google_notes.py','notes_state.py','notes_runner.py','author_notes.py','notes-config.json','notes-cron-entry.sh','notes-cron-job.json','RELEASE-NOTES.md','presence_runner.py','presence_state.py','presence-config.example.json','presence-cron-entry.sh','PRESENCE-IMPLEMENTATION.md','UNIFIED-IMPLEMENTATION.md'))
+    expected.update('ops/location/'+name for name in ('runner.py','state_crypto.py','requirements.txt','scheduled_cycle.py','private_sender.py', 'delivery.py', 'APALAS-IMPLEMENTATION.md','api_child.py','fixture_child.py','config.json','cron-entry.sh','cron-job.json','README.md','ACTIVATION.md','google_notes.py','notes_state.py','notes_runner.py','author_notes.py','notes-config.json','notes-cron-entry.sh','notes-cron-job.json','RELEASE-NOTES.md','presence_runner.py','presence_state.py','presence-config.example.json','presence-cron-entry.sh','PRESENCE-IMPLEMENTATION.md','UNIFIED-IMPLEMENTATION.md'))
     test.assertEqual({str(p.relative_to(source)) for p in source.rglob('*')}, expected)
     with tarfile.open(archive) as tar:
         test.assertEqual({m.name for m in tar.getmembers()}, expected)

@@ -16,7 +16,7 @@ def prepare(destination):
     files = ('runner.py', 'state_crypto.py', 'requirements.txt', 'scheduled_cycle.py',
              'presence_runner.py', 'presence_state.py', 'presence-config.example.json',
              'presence-cron-entry.sh', 'PRESENCE-IMPLEMENTATION.md',
-             'private_sender.py', 'api_child.py', 'fixture_child.py', 'config.json',
+             'private_sender.py', 'delivery.py', 'APALAS-IMPLEMENTATION.md', 'api_child.py', 'fixture_child.py', 'config.json',
              'cron-entry.sh', 'cron-job.json', 'README.md', 'ACTIVATION.md',
              'google_notes.py', 'notes_state.py', 'notes_runner.py', 'author_notes.py',
              'UNIFIED-IMPLEMENTATION.md', 'notes-config.json', 'notes-cron-entry.sh', 'notes-cron-job.json', 'RELEASE-NOTES.md')

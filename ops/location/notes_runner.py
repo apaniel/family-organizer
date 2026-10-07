@@ -190,6 +190,43 @@ def arrival_rows(value, start, end):
         return None
 
 
+def canonical_updated(task, now):
+    """Return a valid canonical authorization timestamp, or fail closed."""
+    try:
+        value = task['updated']
+        if not isinstance(value, str):
+            return None
+        updated = stamp(value)
+        return updated if math.isfinite(updated) and 0 < updated <= now else None
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+
+
+def initial_history_update(item, task, rule, now):
+    same_rule = item.get('fingerprint') == fingerprint(rule)
+    if (trigger(rule) == {'type': 'arrival', 'nearby': False}
+            and item.get('delivery', 'idle') == 'idle'
+            and item.get('episode', 0) == 0 and item.get('attempts', 0) == 0
+            and (not same_rule or 'history_checked' not in item)
+            and not {'dispatch', 'legacy_body', 'message', 'notice_version',
+                     'invalid_rule', 'evaluated_at', 'due_at', 'outcome'} & item.keys()):
+        return canonical_updated(task, now)
+    return None
+
+
+def arrival_floor(item, task, rule, now):
+    """Bound replay using unchanged ledger evidence or canonical rule age."""
+    same_rule = item.get('fingerprint') == fingerprint(rule)
+    anchor = item.get('outside_at', 0) if same_rule else 0
+    start = (item.get('history_after', anchor if anchor and
+                      0 <= now-anchor <= STATIONARY_LOOKBACK else now)
+             if same_rule else now)
+    updated = initial_history_update(item, task, rule, now)
+    if updated is not None:
+        start = min(start, updated)
+    return max(0, now-STATIONARY_LOOKBACK, start)
+
+
 def arrival_history(item, rule, rows, now):
     """Replay observation-time transitions, never treating backlog as current presence.
 
@@ -333,11 +370,7 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
             item = state.data['items'].get(key, {})
             if item.get('delivery', 'idle') != 'idle' or trigger(rule)['type'] != 'arrival':
                 continue
-            start = now
-            if item.get('fingerprint') == fingerprint(rule):
-                anchor = item.get('outside_at', 0)
-                start = item.get('history_after', anchor if anchor and 0 <= now-anchor <= STATIONARY_LOOKBACK else now)
-            history_starts.append(max(0, now-STATIONARY_LOOKBACK, start))
+            history_starts.append(arrival_floor(item, candidates[key], rule, now))
     history_start = min(history_starts, default=now)
     history_cache = None
     history_read = False
@@ -374,12 +407,12 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
             title = ' '.join(str(task.get('title', 'Sin título')).split())[:200]
             text = {'inside': 'La ubicación reciente confirma presencia en el lugar.', 'inferred_inside': 'Según el último registro y el contacto reciente del dispositivo, parece que sigues en el lugar.', 'outside': 'La ubicación indica que estás fuera; no se cumple la condición.', 'stale': 'No pude confirmar presencia: registro antiguo o dispositivo sin contacto reciente.', 'uncertain': 'No pude confirmar presencia con suficiente fiabilidad.'}[outcome]
             item.update(delivery='retry', episode=1, evaluated_at=now, outcome=outcome, due_at=due_stamp(trigger(rule)['dueAt']), message=f'{text} Lugar: {rule["name"]}. Tarea: {title}. Evaluada a las {datetime.fromtimestamp(now).astimezone().isoformat()}.', notice_version=1)
+        recovery_updated = None
         use_history = False
         if history and item['delivery'] == 'idle' and trigger(rule)['type'] == 'arrival':
-            # Upgrade only a real, unconsumed outside anchor under the same rule.
-            if 'history_after' not in item:
-                anchor = item.get('outside_at', 0)
-                item['history_after'] = anchor if anchor and 0 <= now-anchor <= STATIONARY_LOOKBACK else now
+            if 'history_after' not in item or 'history_checked' not in item:
+                recovery_updated = initial_history_update(item, task, rule, now)
+                item['history_after'] = arrival_floor(item, task, rule, now)
             use_history = True
             if not history_read:
                 history_read = True
@@ -407,7 +440,10 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
                 item.update(delivery='retry', episode=1)
             if phase == 'inside':
                 item['outside_at'] = 0
-        state.save()
+        # Keep an initial recovery provisional until its final canonical GET.
+        # A crash here leaves the prior idle ledger, so it cannot bypass the fence.
+        if recovery_updated is None or item['delivery'] != 'retry':
+            state.save()
         if item['delivery'] not in ('retry', 'unknown'):
             continue
         # Re-fetch exact task immediately before transport; identity never depends on list names/title.
@@ -421,6 +457,14 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
         if not unchanged:
             if item['delivery'] == 'retry':
                 item['delivery'] = 'stopped'
+            state.save()
+            continue
+        # Fence only initial recovery that has never frozen a transport claim.
+        if (recovery_updated is not None and item['delivery'] == 'retry'
+                and item['attempts'] == 0 and 'dispatch' not in item
+                and 'legacy_body' not in item
+                and canonical_updated(current, now) != recovery_updated):
+            item['delivery'] = 'stopped'
             state.save()
             continue
         was_unknown = item['delivery'] == 'unknown'

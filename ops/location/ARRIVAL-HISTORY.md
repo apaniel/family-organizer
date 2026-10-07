@@ -37,9 +37,9 @@ no claim; broker errors propagate. Identical IDs deduplicate in memory.
 Only numeric `history_after`/`history_checked` timestamps are added to the ledger.
 No GPS, event IDs, records or history are persisted/logged. Reads overlap the
 bounded replay floor rather than `lastfix`, recovering late arrivals older than
-an already processed ambiguous fix. Legacy replay requires an unchanged idle,
-episode-zero rule with a real `outside_at` within two hours. New/unanchored and
-revised rules arm at first evaluation and exclude earlier movement. Revision
+an already processed ambiguous fix. Legacy replay retains an unchanged idle, episode-zero rule’s real `outside_at`
+within two hours. Initial never-claimed arrival recovery may also use the latest
+canonical task `updated`, as described below. Revision
 resets clear new history fields and outside evidence. Consumed claims remain
 terminal. Exact task revalidation and frozen body/key save precede transport;
 claimed rules perform no more history reads.
@@ -103,3 +103,92 @@ below 200 rows. Older/incomplete evidence cannot activate an alert.
 
 No commit, push, PR, installation, live Tasks/config/state/cron mutation or live
 send was performed by the implementer. Live delivery remains unproven.
+
+## Initial history activation recovery
+
+In this worktree, an idle, never-claimed, non-nearby arrival rule with no
+`history_checked` may lower its initial floor to the latest canonical task
+`updated`. This also covers migration with an existing `history_after` after an
+empty history read. Read start and persisted floor use the same calculation.
+An existing floor/real anchor is eligible only for the matching fingerprint;
+a new or changed rule may use its canonical update without old-rule evidence.
+Any canonical update, including a title edit, gives a conservative rule-age
+floor. The value must be a timezone-aware string yielding a finite positive
+timestamp no later than evaluation time. Missing, malformed, naive and future
+values provide no earlier authorization; otherwise unanchored rules use now.
+All replay remains bounded to two hours. Source-key datetime hints are ignored.
+
+Recovery requires complete, accurate real outside then inside evidence within
+the existing 900-second observation gap. It creates no outside baseline and
+performs no nearby auto-change. Checked history never lowers its floor. Claimed,
+unknown, sent, failed and stopped delivery behavior and transport revalidation
+remain unchanged. No history records or location data are persisted.
+
+Regression tests cover cleared inside-phase anchors, migrated cursors, exactly
+one historical Hola, title-update conservatism, pre-update movement, invalid
+updates, unchanged checked floors, new rules, rule changes, two-hour bounds and
+inside-only evidence. Existing ordering, contradiction, deduplication, privacy
+and transport tests remain in the canonical suite. This change is implementation
+work only; independent review and parent deployment are still required. No live
+broker/task/state/config/cron changes, installation, sends, commits or pushes.
+
+Activation validation used the approved venv with bytecode disabled and only
+`/home/hermes/.hermes/cache/scratch` for temporary fixtures/logs. TDD RED:
+25 focused tests, 3 failing recovery assertions before the runtime change.
+Final focused suite: 26/26 PASS (1.184s), including a genuine empty-read
+migration. Canonical suite: 147 discovered (original 142 plus 5 new methods),
+145/145 PASS (66.875s), with exactly the existing installer and fixture-cron
+exclusions above. The final empty-read test refinement was rerun in the focused
+suite. `git diff --check` passed. Logs: `history-activation-red.log`,
+`history-activation-green.log`, `history-activation-canonical.log`; canonical
+runner: `history-activation-tests.py`, all in designated scratch.
+
+## Final-review blocker correction
+
+This pass changes only this document, `notes_runner.py` and
+`test_arrival_history.py` in the history-activation worktree. A mismatched
+fingerprint ignores the old rule's `history_checked` during read-start
+calculation, matching the later per-item reset. Initial canonical recovery
+captures the validated numeric `updated` in memory and requires the same valid
+timestamp from the existing final canonical GET before freezing transport.
+Identity/open-status/identical-rule checks remain intact. A title-only update
+also stops this unclaimed recovery, even when the rule fingerprint matches;
+missing, invalid, naive or future updates fail closed. The stopped episode is
+not automatically rearmed.
+
+No additional ledger field is needed: the initial recovery claim remains
+provisional until final GET validation. A GET exception or process death before
+validation leaves the previously saved idle ledger; it cannot persist an
+unfenced retry. The normal frozen claim is still saved before transport.
+Already frozen unknown claims retain their body/key, route and existing GET
+behavior, without an update fence or history reread. No GPS or broad metadata
+is persisted or logged.
+
+TDD RED: 29 focused tests, six failing assertions (five final-GET update cases
+and one old-rule checked read-start). GREEN adds a GET-failure regression:
+30/30 PASS. New methods are
+`test_final_get_revalidates_initial_recovery_update`,
+`test_changed_rule_ignores_old_checked_history_at_read_start`,
+`test_frozen_recovery_claim_keeps_body_key_despite_update_change`, and
+`test_recovery_get_crash_keeps_claim_provisional`.
+The final-GET method also verifies the existing changed-fingerprint guard.
+The main canonical recovery test still recovers, ACKs one episode and performs
+no subsequent history read or send.
+
+Validation uses the approved venv with `-B`, `PYTHONDONTWRITEBYTECODE=1` and
+`TMPDIR=/home/hermes/.hermes/cache/scratch`. Focused command:
+`-m unittest discover -s ops/location -p test_arrival_history.py -v`.
+Canonical discovery runner: designated scratch `history-blockers-tests.py`;
+151 tests discovered, 150 selected; **150/150 PASS** (71.440s). It includes
+`test_install.InstallTests.test_clean_main_private_install_preserves_state_and_executes_disabled_entry`
+(disposable offline installer/Git fixtures only). Exactly one test is excluded:
+`test_runtime.RuntimeTests.test_actual_hermes_cron_no_agent_empty_dispatch`,
+which creates a fixture cron job, respecting the no-cron instruction.
+This is not an unfiltered full-suite claim. Logs in designated scratch:
+`history-blockers-red.log`, `history-blockers-green.log`,
+`history-blockers-canonical.log`. No live calls, installation, state/task/config/
+cron changes, commits, pushes or real sends; no `/tmp` scratch. These results
+are test evidence, not self-approval or deployment approval.
+
+Final in-memory compilation of runtime/tests and `git diff --check` PASS.
+Worktree status remains exactly the same three modified files.

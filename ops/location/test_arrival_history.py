@@ -1,5 +1,6 @@
 """Synthetic event evidence only; never reads production locations."""
 import copy
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import tempfile
@@ -41,16 +42,146 @@ class HistoryTests(unittest.TestCase):
 
     def tearDown(self): self.tmp.cleanup()
 
-    def tick(self, rows, now=T+800, result=None, sender=None):
+    def tick(self, rows, now=T+800, result=None, sender=None, current=None):
         def history(start, end):
             self.reads.append((start, end))
             return response([r for r in rows if not isinstance(r, dict) or 'ts' not in r or r['ts'] >= start]) if result is None else result
         with State(self.path) as s:
             return cycle(s, [self.task], lambda: dict(ok=True, person='dan', location=row(now, accuracy=1414)),
-                lambda _: self.task, sender or (lambda body: self.sent.append(body) or 'acknowledged'),
+                lambda _: self.task if current is None else current, sender or (lambda body: self.sent.append(body) or 'acknowledged'),
                 now, history=history)
 
     def item(self): return next(iter(json.loads(self.path.read_text())['items'].values()))
+
+    def recovery_setup(self, updated=T, floor=T+2000, checked=False):
+        self.setUp_reset(anchor=0, lastfix=T+2000, phase='inside')
+        self.task['updated'] = (datetime.fromtimestamp(updated, timezone.utc).isoformat()
+                                if isinstance(updated, (int, float)) else updated)
+        with State(self.path) as state:
+            item = state.data['items'][identity(TASK)]
+            if floor is not None:
+                item['history_after'] = floor
+            if checked:
+                item['history_checked'] = T+2000
+            state.save()
+
+    def test_canonical_update_recovers_cleared_anchor_once(self):
+        for floor in (None, T+2000):
+            with self.subTest(floor=floor):
+                self.recovery_setup(floor=floor)
+                rows = [row(T+120, True), row(T+600), row(T+2100, accuracy=1414)]
+                self.tick(rows, T+2200)
+                self.assertEqual(self.reads[0][0], T)
+                self.assertEqual(self.item()['history_after'], T)
+                self.assertEqual([body['component']['content'] for body in self.sent], ['Hola'])
+                self.tick(rows, T+2300)
+                self.assertEqual(len(self.reads), 1)
+                self.assertEqual(len(self.sent), 1)
+
+    def test_final_get_revalidates_initial_recovery_update(self):
+        for updated in (T+700, None, 'bad', '2026-01-01T00:00:00', T+2300):
+            with self.subTest(updated=updated):
+                self.recovery_setup()
+                current = copy.deepcopy(self.task)
+                current['title'] = 'Edited title'
+                current['updated'] = (datetime.fromtimestamp(updated, timezone.utc).isoformat()
+                                      if isinstance(updated, (int, float)) else updated)
+                self.tick([row(T+120, True), row(T+600)], T+2200, current=current)
+                self.assertFalse(self.sent)
+                self.assertNotIn('dispatch', self.item())
+                self.assertEqual(self.item()['attempts'], 0)
+        self.recovery_setup()
+        current = copy.deepcopy(self.task)
+        current['notes'] = update_notes(current['notes'], {**RULE, 'revision': 2})
+        self.tick([row(T+120, True), row(T+600)], T+2200, current=current)
+        self.assertFalse(self.sent)
+
+    def test_changed_rule_ignores_old_checked_history_at_read_start(self):
+        self.recovery_setup(updated=T+60, checked=True)
+        self.task['notes'] = update_notes(self.task['notes'], {**RULE, 'revision': 2})
+        self.tick([row(T+120, True), row(T+600)], T+2200)
+        self.assertEqual(self.reads[0][0], T+60)
+        self.assertEqual(self.item()['history_after'], T+60)
+        self.assertEqual(len(self.sent), 1)
+
+    def test_recovery_get_crash_keeps_claim_provisional(self):
+        self.recovery_setup()
+        before = self.item()
+        rows = [row(T+120, True), row(T+600)]
+        with State(self.path) as state:
+            with self.assertRaises(RuntimeError):
+                cycle(state, [self.task], lambda: None,
+                      lambda _: (_ for _ in ()).throw(RuntimeError('synthetic GET failure')),
+                      lambda _: self.fail('send'), T+2200,
+                      history=lambda *_: response(rows))
+        self.assertEqual(self.item(), before)
+        self.task['updated'] = datetime.fromtimestamp(T+700, timezone.utc).isoformat()
+        self.tick(rows, T+2300)
+        self.assertFalse(self.sent)
+
+    def test_frozen_recovery_claim_keeps_body_key_despite_update_change(self):
+        self.recovery_setup()
+        rows = [row(T+120, True), row(T+600)]
+        self.tick(rows, T+2200, sender=lambda body: self.sent.append(body) or 'unknown')
+        frozen = copy.deepcopy(self.sent[0])
+        current = copy.deepcopy(self.task)
+        current['updated'] = 'bad'
+        self.tick(rows, T+2300, current=current)
+        self.assertEqual(self.sent, [frozen, frozen])
+        self.assertEqual(len(self.reads), 1)
+        self.assertEqual(self.item()['delivery'], 'sent')
+
+    def test_recovery_rejects_untrusted_update_and_preupdate_records(self):
+        for updated in (None, '', 'bad', '2099-01-01T00:00:00Z',
+                        '2026-01-01T00:00:00', 'NaN', 0, T+2300, T+700):
+            with self.subTest(updated=updated):
+                self.recovery_setup(updated=updated)
+                self.tick([row(T+120, True), row(T+600)], T+2200)
+                self.assertFalse(self.sent)
+        self.recovery_setup()
+        self.task.pop('updated')
+        self.task['sourceKey'] = datetime.fromtimestamp(T, timezone.utc).isoformat()
+        self.tick([row(T+120, True), row(T+600)], T+2200)
+        self.assertFalse(self.sent)
+
+    def test_empty_read_migration_can_recover_before_first_checked_history(self):
+        self.recovery_setup(updated=None, floor=None)
+        self.tick([], T+2000)
+        self.assertNotIn('history_checked', self.item())
+        self.assertEqual(self.item()['history_after'], T+2000)
+        self.task['updated'] = datetime.fromtimestamp(T, timezone.utc).isoformat()
+        self.tick([row(T+120, True), row(T+600)], T+2200)
+        self.assertEqual(len(self.sent), 1)
+
+    def test_checked_history_does_not_lower_floor(self):
+        self.recovery_setup(checked=True)
+        self.tick([row(T+120, True), row(T+600)], T+2200)
+        self.assertEqual(self.reads[0][0], T+2000)
+        self.assertEqual(self.item()['history_after'], T+2000)
+        self.assertFalse(self.sent)
+
+    def test_canonical_update_new_rule_bound_and_inside_only(self):
+        self.recovery_setup(updated=T+60)
+        self.tick([row(T+120, True), row(T+600)], T+2200)
+        self.assertEqual(len(self.sent), 1)
+        self.recovery_setup()
+        self.tick([row(T+600)], T+2200)
+        self.assertFalse(self.sent)
+        self.recovery_setup(updated=T+700)
+        self.task['notes'] = update_notes(self.task['notes'], {**RULE, 'revision': 2})
+        self.tick([row(T+120, True), row(T+600)], T+2200)
+        self.assertEqual(self.reads[0][0], T+700)
+        self.assertFalse(self.sent)
+        self.recovery_setup(updated=T-10000)
+        self.tick([row(T-9900, True), row(T-9500)], T+2200)
+        self.assertEqual(self.reads[0][0], T+2200-7200)
+        self.assertFalse(self.sent)
+        self.recovery_setup()
+        with State(self.path) as state:
+            state.data['items'].clear()
+            state.save()
+        self.tick([row(T+120, True), row(T+600)], T+2200)
+        self.assertEqual(len(self.sent), 1)
 
     def test_hidden_arrival_before_lastfix_sends_once(self):
         rows = [row(T, True), row(T+240), row(T+260, accuracy=26), row(T+480, accuracy=1414)]

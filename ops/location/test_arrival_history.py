@@ -212,7 +212,7 @@ class HistoryTests(unittest.TestCase):
 
     def test_invalid_incomplete_and_future_fail_without_partial_claim(self):
         good = [row(T, True), row(T+240)]
-        bad = [None, {}, response([]), response(good, truncated=True),
+        bad = [None, {}, response(good, truncated=True),
                response(good, has_more=True), {**response(good), 'count': 1},
                {**response(good), 'count': True}, response(good*2500),
                {**response(good), 'person': 'wife'}, {**response(good), 'ok': False},
@@ -224,12 +224,15 @@ class HistoryTests(unittest.TestCase):
             with self.subTest(value_type=type(value).__name__):
                 self.setUp_reset()
                 # None is a malformed broker value, not tick's optional default.
-                if value is None:
-                    with State(self.path) as s:
-                        cycle(s, [self.task], lambda: None, lambda _: self.task,
-                              lambda body: self.sent.append(body), T+800, history=lambda *_: None)
-                else:
-                    self.tick([], result=value)
+                before = self.path.read_bytes()
+                with self.assertRaises(RuntimeError):
+                    if value is None:
+                        with State(self.path) as s:
+                            cycle(s, [self.task], lambda: None, lambda _: self.task,
+                                  lambda body: self.sent.append(body), T+800, history=lambda *_: None)
+                    else:
+                        self.tick([], result=value)
+                self.assertEqual(self.path.read_bytes(), before)
                 self.assertFalse(self.sent)
                 self.assertEqual(self.item()['delivery'], 'idle')
 
@@ -394,7 +397,8 @@ class HistoryTests(unittest.TestCase):
         self.tick([row(T, True), point, point])
         self.assertEqual(len(self.sent), 1)
         self.setUp_reset()
-        self.tick([row(T, True), point, {**point, 'lat': .004}])
+        with self.assertRaises(RuntimeError):
+            self.tick([row(T, True), point, {**point, 'lat': .004}])
         self.assertFalse(self.sent)
 
     def test_conflicting_timestamp_with_prior_anchor_does_not_claim_or_set_baseline(self):

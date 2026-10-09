@@ -212,3 +212,33 @@ All runs used approved venv, bytecode disabled and designated scratch, no `/tmp`
 No live broker calls, production installation/state/task/send operations, commits
 or pushes. Parent review/merge/install and real-data recovery remain pending;
 this patch does not establish delivery of the original hello or self-approval.
+
+## Visit contract extension
+
+The candidate described in [RELEASE-NOTES.md](RELEASE-NOTES.md#observed-ios-visits-uncommitted-implementation-candidate)
+supersedes the visit-exclusion statements above. It adds true-time arrival
+observations and chronological departure phases without changing timed presence,
+phone geometry, the bounded scanner, immutable transport or existing release gates.
+Full canonical fixture execution is permitted for this pass, including isolated
+installer/Git and cron fixtures; historical exclusions above describe past runs.
+
+
+## Independent-review blocker fixes (uncommitted)
+
+An authorized precise inside visit establishes a historical arrival occurrence
+for either nearby policy. Later phone movement, departure or arrival elsewhere
+updates latest phase without retroactively canceling that occurrence. Saved
+newer outside observations retain their phase when a late arrival is read alone.
+Tied contradictory observations remain uncertain. Departures create neither
+arrivals nor exterior GPS anchors. Floors, two-hour bounds, final canonical GET
+and immutable one-shot transport remain required; arrival is not current presence.
+
+The shared arrival history is validated before any ledger save or partial claim.
+Provider errors, incomplete/count/saturated responses and invalid envelope/location
+schema raise an operational error; the quiet CLI exits nonzero with bounded text
+and no GPS. Prior state bytes survive, allowing the next complete read to recover.
+Valid empty/no-eligible history is successful without delivery. Invalid visit event
+times remain ineligible and legitimate non-location metadata remains ignored.
+
+This correction does not approve or activate the candidate. See scratch
+`location-visit-fixes.md` for exact RED/GREEN commands and complete outputs.

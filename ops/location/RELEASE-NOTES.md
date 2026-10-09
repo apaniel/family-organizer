@@ -223,3 +223,46 @@ reconciled or enabled. Offline fixture ACK proves no live activation.
 
 Current fix evaluation captures wall clock after latest() returns, with an
 injectable clock for tests; future timestamps remain rejected with no skew allowance.
+
+## Observed iOS visits (uncommitted implementation candidate)
+
+Arrival history now accepts the verified broker `visit_arrival` contract: numeric
+finite geometry and accuracy <=100m, explicit valid `arrival`, null/missing
+`departure`, and event time <= `received_at` <= evaluation time. `ts` bounds the
+broker query; the true arrival bounds authorization and replay. A verified visit
+inside the fence establishes observed arrival for either nearby policy without
+requiring an invented exterior fix. Phone-only nearby=false still requires the
+existing outside→inside transition within 900 seconds. Initial never-claimed
+nearby rules can also use the canonical `updated` authorization floor, fenced by
+the same final GET. Checked floors, the two-hour cap and consumed claims survive.
+
+A `visit_departure` requires explicit arrival and departure times with
+arrival <= departure <= received <= now. Its coordinate is the place left, not
+an exterior GPS point. A departure whose uncertainty overlaps the fence clears
+the outside anchor and records an observed departure phase, including coarse
+departure accuracy. It never establishes arrival or supplies a phone outside
+baseline. Later exterior phone evidence or arrival at another place updates the
+latest phase without canceling an earlier authorized observed arrival. Saved
+newer exits remain the latest phase when an overlapping read omits them.
+Same-time contradictions remain uncertain and cannot establish an arrival.
+Both nearby policies accept a precise inside visit as historical arrival
+evidence; neither treats it as proof of current presence.
+
+Missing/invalid visit event times do not become evidence; malformed geometry or
+receipt chronology fails the response closed. Unknown non-location metadata
+kinds are ignored before location parsing, while response errors, count mismatch,
+truncation, saturation and conflicting location IDs stop the cycle with a bounded
+operational error before state saves or partial claims. Valid empty history or
+no eligible events succeeds without delivery; invalid visit event times remain
+ineligible. A failed read preserves prior ledger bytes and replay floors for
+recovery on the next complete bounded read. No raw
+history or coordinates are persisted. Duplicate visit/GPS evidence consumes one
+canonical task episode, with unchanged immutable delivery key/body and receipt
+reconciliation across restart/revision. Explicit user text such as `Hola` is
+preserved exactly. An arrival notification describes observed event evidence:
+a delayed upload cannot assert current presence. Snapshot freshness and timed
+`presence_at` inference remain unchanged; visits do not extend that inference.
+
+This candidate has no activation or deployment approval. Installation still
+requires independent parent review, approved merge and exact clean main through
+`install-main.py`; preserve all live state/config/journals and the existing cron.

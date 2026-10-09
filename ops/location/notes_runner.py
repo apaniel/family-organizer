@@ -163,12 +163,17 @@ def arrival_rows(value, start, end):
                 or value.get('has_more', False) is not False):
             return None
         rows = value['locations']
-        if (not isinstance(rows, list) or not rows or type(value.get('count')) is not int
+        if (not isinstance(rows, list) or type(value.get('count')) is not int
                 or value['count'] != len(rows) or len(rows) >= ARRIVAL_HISTORY_LIMIT):
             return None
         checked = []
         event_ids = {}
         for row in rows:
+            if not isinstance(row, dict):
+                return None
+            kind = row.get('kind', 'location')
+            if kind not in ('location', 'significant', 'trip', 'fence', 'visit_arrival', 'visit_departure'):
+                continue
             ts, received = stamp(row['ts']), stamp(row['received_at'])
             coords = [row[k] for k in ('lat', 'lon', 'h_acc')]
             if (not all(math.isfinite(v) for v in (ts, received))
@@ -185,7 +190,23 @@ def arrival_rows(value, start, end):
                         return None
                     continue
                 event_ids[event_id] = row
-            checked.append((ts, row))
+            if kind in ('visit_arrival', 'visit_departure'):
+                try:
+                    arrival = stamp(row['arrival'])
+                    departure = stamp(row['departure']) if kind == 'visit_departure' else None
+                    event = departure if departure is not None else arrival
+                    if (not math.isfinite(arrival) or not math.isfinite(event)
+                            or not 0 <= arrival <= event <= received <= end
+                            or kind == 'visit_arrival' and row.get('departure') is not None):
+                        continue
+                    # Query bounds apply to ts; authorization/replay apply to true event time.
+                    if event < start:
+                        continue
+                except (KeyError, TypeError, ValueError, OverflowError, AttributeError):
+                    continue
+                checked.append((event, row))
+            else:
+                checked.append((ts, row))
         return sorted(checked, key=lambda pair: pair[0])
     except (KeyError, TypeError, ValueError, OverflowError, AttributeError):
         return None
@@ -205,7 +226,7 @@ def canonical_updated(task, now):
 
 def initial_history_update(item, task, rule, now):
     same_rule = item.get('fingerprint') == fingerprint(rule)
-    if (trigger(rule) == {'type': 'arrival', 'nearby': False}
+    if (trigger(rule)['type'] == 'arrival'
             and item.get('delivery', 'idle') == 'idle'
             and item.get('episode', 0) == 0 and item.get('attempts', 0) == 0
             and (not same_rule or 'history_checked' not in item)
@@ -238,6 +259,7 @@ def arrival_history(item, rule, rows, now):
     outside = item.get('outside_at', 0)
     outside = outside if max(0, now-STATIONARY_LOOKBACK) <= outside <= now else 0
     arrived = False
+    visit_arrived = False
     newest = item['lastfix']
     phase = item['phase']
     last_observed = 0
@@ -245,17 +267,32 @@ def arrival_history(item, rule, rows, now):
         if ts < floor:
             continue
         classifications = set()
+        visit_inside = False
+        phone_inside = False
         for _, loc in group:
+            kind = loc.get('kind', 'location')
+            d = distance(loc, rule)
+            if kind == 'visit_departure':
+                # Departure updates latest phase, never supplies an outside GPS
+                # anchor or cancels an earlier observed arrival.
+                if d-loc['h_acc'] <= rule['radius']:
+                    classifications.add('departed')
+                continue
             if loc['h_acc'] > 100:
                 continue
-            # Preserve the existing phone-sample policy; visits are excluded.
-            if loc.get('kind', 'location') not in ('location', 'significant', 'trip', 'fence'):
-                continue
-            d = distance(loc, rule)
             observed = ('inside' if d+loc['h_acc'] <= rule['radius'] else
                         'outside' if d-loc['h_acc'] >= rule['radius']+max(50, rule['radius']*.25) else None)
-            if observed:
+            if kind == 'visit_arrival':
+                if observed == 'inside':
+                    classifications.add('inside')
+                    visit_inside = True
+                elif observed == 'outside':
+                    # Later arrival elsewhere updates phase; phone transition
+                    # anchors remain restricted to phone samples.
+                    classifications.add('departed')
+            elif observed:
                 classifications.add(observed)
+                phone_inside |= observed == 'inside'
         # Contradictory precise evidence has no chronological ordering. Neither
         # side may claim arrival or change phase/baseline; uncertainty retains
         # the real anchor. Coarse/ambiguous rows cannot mask precise evidence.
@@ -264,20 +301,22 @@ def arrival_history(item, rule, rows, now):
         observed = classifications.pop()
         if observed:
             last_observed = ts
-        if observed == 'outside':
-            outside = ts
+        if observed in ('outside', 'departed'):
+            outside = ts if observed == 'outside' else 0
         elif observed == 'inside':
-            if (outside and 0 < ts-outside <= OUTSIDE_MAX_AGE) or trigger(rule)['nearby']:
+            if visit_inside:
+                visit_arrived = True
+            if phone_inside and ((outside and 0 < ts-outside <= OUTSIDE_MAX_AGE) or trigger(rule)['nearby']):
                 arrived = True
             outside = 0
         # Update phase only from an unambiguous timestamp classification.
         if ts >= newest and observed:
-            newest, phase = ts, observed
+            newest, phase = ts, 'outside' if observed == 'departed' else observed
     if last_observed < item['lastfix']:
         outside = item.get('outside_at', 0)
     item.update(lastfix=max(item['lastfix'], newest), phase=phase,
                 outside_at=outside, history_checked=now)
-    if arrived:
+    if arrived or visit_arrived:
         item.update(delivery='retry', episode=1)
 
 
@@ -334,7 +373,6 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
     for key, item in state.data['items'].items():
         if key not in rules and key not in invalid and item['delivery'] in ('idle', 'retry'):
             item['delivery'] = 'stopped'
-    state.save()
     for key, fp in invalid.items():
         if key not in state.data['items'] or state.data['items'][key]['delivery'] == 'idle':
             task = candidates[key]
@@ -356,7 +394,6 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
                         phase=None, lastfix=0, outside_at=0)
             item.pop('history_after', None)
             item.pop('history_checked', None)
-    state.save()
     needs_fix = any(state.data['items'].get(k, {}).get('delivery', 'idle') == 'idle'
                     and (history is None or trigger(r)['type'] == 'presence_at')
                     for k, r in due_rules.items())
@@ -374,7 +411,11 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
             history_starts.append(arrival_floor(item, candidates[key], rule, now))
     history_start = min(history_starts, default=now)
     history_cache = None
-    history_read = False
+    if history_starts:
+        history_cache = arrival_rows(history(history_start, now), history_start, now)
+        if history_cache is None:
+            raise RuntimeError('Location history invalid or incomplete')
+    state.save()
     sent = 0
     for key in list(due_rules) + list(invalid):
         rule = rules.get(key)
@@ -415,12 +456,9 @@ def cycle(state, tasks, latest, get_task, send, now=None, clock=time.time, evide
                 recovery_updated = initial_history_update(item, task, rule, now)
                 item['history_after'] = arrival_floor(item, task, rule, now)
             use_history = True
-            if not history_read:
-                history_read = True
-                history_cache = arrival_rows(history(history_start, now), history_start, now)
             if supplied_now is None:
                 now = clock()
-            if history_cache is not None:
+            if history_cache:
                 arrival_history(item, rule, history_cache, now)
         if item['delivery'] == 'idle' and valid and not use_history:
             loc = fix['location']
